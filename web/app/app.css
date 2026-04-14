@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --color-accent: #8B2020;
+  --color-canvas: #EAEAE4;
+}
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+html, body, #root {
+  width: 100%;
+  min-height: 100vh;
+  background: #b0b0a8;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  font-family: var(--font-sans);
+}
+
+/* Fixed portrait kiosk canvas */
+.screen {
+  width: 1080px;
+  height: 1920px;
+  background: var(--color-canvas);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@keyframes dot-pulse {
+  0%, 100% { transform: scale(1);    opacity: 1; }
+  50%       { transform: scale(0.5); opacity: 0.3; }
+}
+
+.dot-pulse {
+  animation: dot-pulse 1.2s ease-in-out infinite;
+}
