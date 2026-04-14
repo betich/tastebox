@@ -1,6 +1,9 @@
 # Serial Communication
 pyserial>=3.5
 
+# I2C Communication
+smbus2>=0.4.0
+
 # Data Processing & Analysis
 numpy>=1.24.0
 pandas>=2.0.0
