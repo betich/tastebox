@@ -1,0 +1,82 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+**Tastebox** (Robo Cooker) is a senior robotics project. A web UI lets users pick and customize a menu; a Python controller translates those choices into I2C commands sent to two Arduino Nano firmware nodes that drive physical cooking and plating hardware.
+
+---
+
+## Commands
+
+### Web (`/web`)
+```bash
+npm run dev        # Dev server with HMR at http://localhost:5173
+npm run build      # Production build → build/client + build/server
+npm run start      # Serve production build
+npm run typecheck  # Type-check + generate route types
+```
+
+### Python controller (`/controller`)
+```bash
+python master.py   # Run the main controller / hardware demo
+```
+
+### Arduino firmware (`/nodes/cooker`, `/nodes/plating`)
+Uses PlatformIO CLI:
+```bash
+pio run              # Compile
+pio run --target upload  # Flash to Arduino Nano
+pio device monitor   # Serial monitor at 115200 baud
+```
+
+---
+
+## Architecture
+
+```
+Web UI (React Router / TypeScript)
+        ↕  HTTP
+Python Controller (master.py)
+        ↕  I2C (SMBus / smbus2)
+Arduino Nano × 2
+        ↕  GPIO
+Physical hardware (motors, encoders, buzzer)
+```
+
+### Web (`/web`)
+- **Framework**: React Router 7 with SSR enabled, TailwindCSS 4, Vite
+- **Routes**: `home` → `personalize` → `cooking` → `done` (defined in `app/routes.ts`)
+- **State**: Local React state only — no global store
+- **Menu data**: `app/types.ts` — `MENU` array and `MenuItem` interface are the single source of truth for menu items
+
+### Python Controller (`/controller`)
+- `master.py` — entry point; discovers devices and runs demo sequences
+- `bus.py` — thin SMBus wrapper (`read_byte`, `write_bytes`, `probe`)
+- `devices/base.py` — abstract `I2CDevice` with address and bus
+- `devices/cooker.py` — `CookerDevice` at I2C address `0x42`; controls encoder position, power, event flags (CW/CCW/CLICK)
+- `devices/plating.py` — `PlatingArmDevice` at I2C address `0x43`; controls dual stepper motors, HOME/STOP commands
+
+### Arduino Firmware (`/nodes/`)
+Both nodes share the same PlatformIO config (`atmelavr`, `nanoatmega328`, Arduino framework):
+
+| Node | I2C address | Key hardware |
+|------|-------------|--------------|
+| cooker | `0x42` | Rotary encoder (pins 2,3), click button (4), buzzer (8) |
+| plating | `0x43` | Stepper 1 (D7/D8/D4), Stepper 2 (D13/D12/D11), joystick (A0, A1) |
+
+`/sketches/` holds reference Arduino `.ino` files; production firmware lives in `/nodes/*/src/main.cpp`.
+
+### I2C Register Maps (quick reference)
+**Cooker (0x42)**
+- `0x00–0x01` current position (int16), `0x02` power state, `0x03` event flags (clears on read), `0x10–0x11` command / set-position
+
+**Plating (0x43)**
+- `0x00–0x03` motor positions (M1 lo/hi, M2 lo/hi), `0x04` status flags; commands: STOP `0x01`, HOME `0x02`
+
+---
+
+## Deployment
+
+The web app is containerised — `Dockerfile` in `/web/` builds and serves via `react-router-serve` on port 3000.

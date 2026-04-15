@@ -1,3 +1,6 @@
+# HTTP API
+flask>=3.0.0
+
 # Serial Communication
 pyserial>=3.5
 
