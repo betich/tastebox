@@ -12,11 +12,11 @@ export default function Personalize() {
   const menu = params.get("menu") ?? "0"
 
   const [umami,    setUmami]    = useState(2)
-  const [spiciness, setSpiciness] = useState(3)
+  const [oiliness, setOiliness] = useState(3)
   const [pressing, setPressing]  = useState(false)
 
   function handleNext() {
-    navigate(`/cooking?menu=${menu}&umami=${umami}&spiciness=${spiciness}`)
+    navigate(`/cooking?menu=${menu}&umami=${umami}&oiliness=${oiliness}`)
   }
 
   return (
@@ -28,8 +28,8 @@ export default function Personalize() {
         </h1>
 
         <div className="w-full flex flex-col gap-20">
-          <DiscreteBar label="UMAMI"     value={umami}     onChange={setUmami} />
-          <DiscreteBar label="SPICINESS" value={spiciness} onChange={setSpiciness} />
+          <DiscreteBar label="UMAMI"    value={umami}    onChange={setUmami} />
+          <DiscreteBar label="OILINESS" value={oiliness} onChange={setOiliness} />
         </div>
 
         {/* Next button */}
