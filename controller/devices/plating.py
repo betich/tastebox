@@ -1,15 +1,14 @@
 from ..bus import I2CBus
 from .base import I2CDevice
 
-# Register map — mirrors plating_arm.ino (I2C strategy, address 0x43)
-REG_M1_POS_HI = 0x00
-REG_M1_POS_LO = 0x01
-REG_M2_POS_HI = 0x02
-REG_M2_POS_LO = 0x03
-REG_STATUS    = 0x04  # bit0=M1_busy, bit1=M2_busy
-REG_CMD       = 0x10
-REG_SET_M1_HI = 0x11  # int16 motor 1 target (hi byte first)
-REG_SET_M2_HI = 0x13  # int16 motor 2 target (hi byte first)
+# Register map — mirrors plating/src/main.cpp (I2C slave at 0x43)
+REG_PAN_POS_HI  = 0x00  # pan stepper position high byte (read)
+REG_PAN_POS_LO  = 0x01  # pan stepper position low byte (read)
+REG_SERVO_ANGLE = 0x02  # servo arm angle 0-180 (read)
+REG_STATUS      = 0x03  # bit0 = stepper busy (read)
+REG_CMD         = 0x10
+REG_SET_PAN_HI  = 0x11  # int16 pan target (hi byte, lo byte in one write)
+REG_SET_SERVO   = 0x13  # servo angle 0-180 (write)
 
 CMD_STOP = 0x01
 CMD_HOME = 0x02
@@ -18,27 +17,28 @@ DEFAULT_ADDRESS = 0x43
 
 
 class PlatingArmDevice(I2CDevice):
-    def __init__(self, bus: I2CBus, address: int = DEFAULT_ADDRESS, name: str = "plating_arm"):
+    def __init__(self, bus: I2CBus, address: int = DEFAULT_ADDRESS, name: str = "plater"):
         super().__init__(bus, address, name)
 
     # ── reads ────────────────────────────────────────────────
 
-    def get_positions(self) -> tuple[int, int]:
-        m1 = self.bus.read_int16(self.address, REG_M1_POS_HI, REG_M1_POS_LO)
-        m2 = self.bus.read_int16(self.address, REG_M2_POS_HI, REG_M2_POS_LO)
-        return m1, m2
+    def get_pan_position(self) -> int:
+        return self.bus.read_int16(self.address, REG_PAN_POS_HI, REG_PAN_POS_LO)
 
-    def is_busy(self) -> tuple[bool, bool]:
-        flags = self.bus.read_byte(self.address, REG_STATUS)
-        return bool(flags & 0x01), bool(flags & 0x02)
+    def get_servo_angle(self) -> int:
+        return self.bus.read_byte(self.address, REG_SERVO_ANGLE)
+
+    def is_busy(self) -> bool:
+        return bool(self.bus.read_byte(self.address, REG_STATUS) & 0x01)
 
     # ── commands ─────────────────────────────────────────────
 
-    def move(self, m1_steps: int, m2_steps: int):
-        m1 = int(m1_steps) & 0xFFFF
-        m2 = int(m2_steps) & 0xFFFF
-        self.bus.write_bytes(self.address, REG_SET_M1_HI, m1 >> 8, m1 & 0xFF)
-        self.bus.write_bytes(self.address, REG_SET_M2_HI, m2 >> 8, m2 & 0xFF)
+    def move_pan(self, steps: int):
+        val = int(steps) & 0xFFFF
+        self.bus.write_bytes(self.address, REG_SET_PAN_HI, val >> 8, val & 0xFF)
+
+    def set_servo(self, angle: int):
+        self.bus.write_bytes(self.address, REG_SET_SERVO, max(0, min(180, int(angle))))
 
     def stop(self):
         self.bus.write_bytes(self.address, REG_CMD, CMD_STOP)
@@ -49,14 +49,11 @@ class PlatingArmDevice(I2CDevice):
     # ── base ─────────────────────────────────────────────────
 
     def status(self) -> dict:
-        m1_pos, m2_pos = self.get_positions()
-        m1_busy, m2_busy = self.is_busy()
         return {
-            "device":   self.name,
-            "address":  hex(self.address),
-            "online":   self.ping(),
-            "m1_pos":   m1_pos,
-            "m2_pos":   m2_pos,
-            "m1_busy":  m1_busy,
-            "m2_busy":  m2_busy,
+            "device":      self.name,
+            "address":     hex(self.address),
+            "online":      self.ping(),
+            "pan_pos":     self.get_pan_position(),
+            "servo_angle": self.get_servo_angle(),
+            "busy":        self.is_busy(),
         }

@@ -3,30 +3,53 @@ Flask HTTP API for Tastebox hardware control.
 
 Endpoints
 ---------
-GET  /status            — probe both devices and return full status
-GET  /cooker/status     — cooker full status
-GET  /cooker/position   — current encoder position
-GET  /cooker/events     — poll & clear event flags (CW/CCW/CLICK)
-POST /cooker/position   — set target position  body: {"position": <int>}
-POST /cooker/click      — simulate encoder click
-POST /cooker/reset      — reset encoder position to 0
+GET  /status                 — full status of all four devices
 
-GET  /plating/status    — plating arm full status
-POST /plating/move      — move steppers  body: {"m1": <int>, "m2": <int>}
-POST /plating/stop      — emergency stop both motors
-POST /plating/home      — run homing sequence
+GET  /cooker/status          — cooker full status
+GET  /cooker/position        — current encoder position
+GET  /cooker/events          — poll & clear event flags (CW/CCW/CLICK)
+POST /cooker/position        — set target position  body: {"position": <int>}
+POST /cooker/click           — simulate encoder click
+POST /cooker/reset           — reset encoder position to 0
+
+GET  /plating/status         — plater full status
+POST /plating/move           — move pan stepper  body: {"steps": <int>}
+POST /plating/servo          — set arm servo angle  body: {"angle": <int>}
+POST /plating/stop           — stop pan stepper
+POST /plating/home           — home pan stepper
+
+GET  /ingredient/status      — ingredient dispenser status
+POST /ingredient/dispense    — run coil stepper forward for duration
+POST /ingredient/retract     — run coil stepper in reverse for duration
+POST /ingredient/stop        — stop coil stepper immediately
+POST /ingredient/duration    — set run duration  body: {"ms": <int>}
+
+GET  /cutter/status          — cutter & lid status
+POST /cutter/lid/open        — open lid
+POST /cutter/lid/close       — close lid
+POST /cutter/lid/duration    — set lid hold duration  body: {"ms": <int>}
+POST /cutter/piston1/extend  — extend piston 1
+POST /cutter/piston1/retract — retract piston 1
+POST /cutter/piston2/extend  — extend piston 2
+POST /cutter/piston2/retract — retract piston 2
+POST /cutter/piston/duration — set piston run duration  body: {"ms": <int>}
+POST /cutter/servo1          — set servo1 angle  body: {"angle": <int>}
+POST /cutter/servo2          — set servo2 angle  body: {"angle": <int>}
+POST /cutter/stop            — stop all cutter actuators
 """
 
 from flask import Flask, jsonify, request
 from bus import I2CBus
-from devices import CookerDevice, PlatingArmDevice
+from devices import CookerDevice, PlatingArmDevice, IngredientDevice, CutterDevice
 
 app = Flask(__name__)
 
 # ── Hardware singletons (opened once at startup) ──────────────────────────────
-_bus    = I2CBus(bus_num=1)
-cooker  = CookerDevice(_bus)
-plating = PlatingArmDevice(_bus)
+_bus       = I2CBus(bus_num=1)
+cooker     = CookerDevice(_bus)
+plating    = PlatingArmDevice(_bus)
+ingredient = IngredientDevice(_bus)
+cutter     = CutterDevice(_bus)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -59,6 +82,8 @@ def all_status():
     return _ok(
         cooker=cooker.status(),
         plating=plating.status(),
+        ingredient=ingredient.status(),
+        cutter=cutter.status(),
     )
 
 
@@ -112,13 +137,23 @@ def plating_status():
 @app.post("/plating/move")
 def plating_move():
     try:
-        body = _require_json("m1", "m2")
-        m1   = int(body["m1"])
-        m2   = int(body["m2"])
+        body  = _require_json("steps")
+        steps = int(body["steps"])
     except (ValueError, TypeError) as e:
         return _err(str(e))
-    plating.move(m1, m2)
-    return _ok(m1=m1, m2=m2)
+    plating.move_pan(steps)
+    return _ok(steps=steps)
+
+
+@app.post("/plating/servo")
+def plating_servo():
+    try:
+        body  = _require_json("angle")
+        angle = int(body["angle"])
+    except (ValueError, TypeError) as e:
+        return _err(str(e))
+    plating.set_servo(angle)
+    return _ok(angle=angle)
 
 
 @app.post("/plating/stop")
@@ -130,6 +165,135 @@ def plating_stop():
 @app.post("/plating/home")
 def plating_home():
     plating.home()
+    return _ok()
+
+
+# ── ingredient ────────────────────────────────────────────────────────────────
+
+@app.get("/ingredient/status")
+def ingredient_status():
+    return _ok(**ingredient.status())
+
+
+@app.post("/ingredient/dispense")
+def ingredient_dispense():
+    ingredient.dispense()
+    return _ok()
+
+
+@app.post("/ingredient/retract")
+def ingredient_retract():
+    ingredient.retract()
+    return _ok()
+
+
+@app.post("/ingredient/stop")
+def ingredient_stop():
+    ingredient.stop()
+    return _ok()
+
+
+@app.post("/ingredient/duration")
+def ingredient_duration():
+    try:
+        body = _require_json("ms")
+        ms   = int(body["ms"])
+    except (ValueError, TypeError) as e:
+        return _err(str(e))
+    ingredient.set_duration(ms)
+    return _ok(ms=ms)
+
+
+# ── cutter ────────────────────────────────────────────────────────────────────
+
+@app.get("/cutter/status")
+def cutter_status():
+    return _ok(**cutter.status())
+
+
+@app.post("/cutter/lid/open")
+def cutter_lid_open():
+    cutter.open_lid()
+    return _ok()
+
+
+@app.post("/cutter/lid/close")
+def cutter_lid_close():
+    cutter.close_lid()
+    return _ok()
+
+
+@app.post("/cutter/lid/duration")
+def cutter_lid_duration():
+    try:
+        body = _require_json("ms")
+        ms   = int(body["ms"])
+    except (ValueError, TypeError) as e:
+        return _err(str(e))
+    cutter.set_lid_duration(ms)
+    return _ok(ms=ms)
+
+
+@app.post("/cutter/piston1/extend")
+def cutter_p1_extend():
+    cutter.piston1_extend()
+    return _ok()
+
+
+@app.post("/cutter/piston1/retract")
+def cutter_p1_retract():
+    cutter.piston1_retract()
+    return _ok()
+
+
+@app.post("/cutter/piston2/extend")
+def cutter_p2_extend():
+    cutter.piston2_extend()
+    return _ok()
+
+
+@app.post("/cutter/piston2/retract")
+def cutter_p2_retract():
+    cutter.piston2_retract()
+    return _ok()
+
+
+@app.post("/cutter/piston/duration")
+def cutter_piston_duration():
+    try:
+        body = _require_json("ms")
+        ms   = int(body["ms"])
+    except (ValueError, TypeError) as e:
+        return _err(str(e))
+    cutter.set_piston_duration(ms)
+    return _ok(ms=ms)
+
+
+@app.post("/cutter/servo1")
+def cutter_servo1():
+    try:
+        body  = _require_json("angle")
+        angle = int(body["angle"])
+    except (ValueError, TypeError) as e:
+        return _err(str(e))
+    cutter.set_servo1(angle)
+    return _ok(angle=angle)
+
+
+@app.post("/cutter/servo2")
+def cutter_servo2():
+    try:
+        body  = _require_json("angle")
+        angle = int(body["angle"])
+    except (ValueError, TypeError) as e:
+        return _err(str(e))
+    cutter.set_servo2(angle)
+    return _ok(angle=angle)
+
+
+@app.post("/cutter/stop")
+def cutter_stop():
+    cutter.stop_all()
     return _ok()
 
 

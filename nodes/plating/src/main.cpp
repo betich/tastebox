@@ -1,49 +1,38 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <Servo.h>
 
-// Motor 1: PUL→D7,  DIR→D8,  ENA→D4  — Joystick Y (A1)
-// Motor 2: PUL→D13, DIR→D12, ENA→D11 — Joystick X (A0)
-//
-// Control strategy: set CONTROL_MODE below.
-//   MODE_JOYSTICK — stand-alone joystick control
-//   MODE_I2C      — I2C slave at I2C_ADDRESS (0x43), register-based
-
-#define MODE_JOYSTICK 0
-#define MODE_I2C      1
-#define CONTROL_MODE  MODE_I2C   // ← change here to switch strategy
+// Plater node — I2C slave at 0x43
+// Motor (pan): PUL→D13, DIR→D12, ENA→D11
+// Servo (arm): D3
 
 // ── Hardware constants ─────────────────────────────────────
 #define MICROSTEPPING     16
 #define MOTOR_STEPS_REV   200
 #define GEAR_RATIO        1.0f
 #define STEPS_PER_DEG     (MOTOR_STEPS_REV * MICROSTEPPING * GEAR_RATIO / 360.0f)
+#define MAX_SPEED_DEG     60.0f
 
-#define JOY_CENTER    512
-#define JOY_DEADZONE   30
-#define MAX_SPEED_DEG  60.0f
-#define LOOP_MS        50
+#define PIN_SERVO_ARM     3
 
-// ── I2C constants ──────────────────────────────────────────
-#define I2C_ADDRESS   0x43
+// ── I2C ────────────────────────────────────────────────────
+#define I2C_ADDRESS       0x43
 
-// Registers
-#define REG_M1_POS_HI 0x00
-#define REG_M1_POS_LO 0x01
-#define REG_M2_POS_HI 0x02
-#define REG_M2_POS_LO 0x03
-#define REG_STATUS    0x04  // bit0=M1_busy, bit1=M2_busy
-#define REG_CMD       0x10  // 0x01=stop, 0x02=home
-#define REG_SET_M1_HI 0x11  // int16 motor 1 target (hi, lo)
-#define REG_SET_M2_HI 0x13  // int16 motor 2 target (hi, lo)
+#define REG_PAN_POS_HI    0x00  // pan stepper position high byte (read)
+#define REG_PAN_POS_LO    0x01  // pan stepper position low byte (read)
+#define REG_SERVO_ANGLE   0x02  // servo angle 0-180 (read)
+#define REG_STATUS        0x03  // bit0 = stepper busy (read)
+#define REG_CMD           0x10  // commands (write)
+#define REG_SET_PAN_HI    0x11  // stepper target high byte (write)
+#define REG_SET_PAN_LO    0x12  // stepper target low byte (write, sent with 0x11)
+#define REG_SET_SERVO     0x13  // servo angle 0-180 (write)
 
-// Commands
-#define CMD_STOP 0x01
-#define CMD_HOME 0x02
+#define CMD_STOP          0x01
+#define CMD_HOME          0x02
 
 // ── Stepper ────────────────────────────────────────────────
 struct Stepper {
   uint8_t pin_step, pin_dir, pin_ena;
-  bool ena_active_high;
 
   void begin() {
     pinMode(pin_step, OUTPUT);
@@ -51,7 +40,7 @@ struct Stepper {
     pinMode(pin_ena,  OUTPUT);
     digitalWrite(pin_step, LOW);
     digitalWrite(pin_dir,  LOW);
-    digitalWrite(pin_ena,  ena_active_high ? HIGH : LOW);
+    digitalWrite(pin_ena,  LOW);  // ENA active-low: LOW = enabled
   }
 
   void step(long steps, float speed_deg) {
@@ -70,59 +59,15 @@ struct Stepper {
   }
 };
 
-// ── JoyAxis ────────────────────────────────────────────────
-struct JoyAxis {
-  uint8_t pin;
-
-  float readNorm() {
-    int raw = analogRead(pin);
-    int deflection = raw - JOY_CENTER;
-    if (abs(deflection) <= JOY_DEADZONE) return 0.0f;
-    float norm = (float)(deflection - (deflection > 0 ? JOY_DEADZONE : -JOY_DEADZONE))
-                 / (float)(512 - JOY_DEADZONE);
-    return constrain(norm, -1.0f, 1.0f);
-  }
-
-  int readRaw() { return analogRead(pin); }
-};
-
 // ── Instances ──────────────────────────────────────────────
-Stepper motor1 = { 7,  8,  4,  false };
-Stepper motor2 = { 13, 12, 11, false };
-JoyAxis joyY   = { A1 };
-JoyAxis joyX   = { A0 };
+Stepper pan = { 13, 12, 11 };
+Servo   arm;
 
-// ── Strategy: Joystick ─────────────────────────────────────
-#if CONTROL_MODE == MODE_JOYSTICK
-
-void strategySetup() {
-  Serial.println("[MODE] Joystick control");
-}
-
-void strategyLoop() {
-  auto drive = [](Stepper& motor, JoyAxis& axis) {
-    float norm = axis.readNorm();
-    if (norm == 0.0f) return;
-    float delta_deg = norm * MAX_SPEED_DEG * (LOOP_MS / 1000.0f);
-    long steps = (long)(delta_deg * STEPS_PER_DEG);
-    motor.step(steps, MAX_SPEED_DEG);
-  };
-
-  drive(motor1, joyY);
-  drive(motor2, joyX);
-
-  Serial.print("Y: "); Serial.print(joyY.readRaw());
-  Serial.print("\tX: "); Serial.println(joyX.readRaw());
-
-  delay(LOOP_MS);
-}
-
-// ── Strategy: I2C ─────────────────────────────────────────
-#elif CONTROL_MODE == MODE_I2C
-
-volatile int16_t m1_pos     = 0, m2_pos     = 0;
-volatile int16_t m1_target  = 0, m2_target  = 0;
-volatile uint8_t i2c_status = 0;
+// ── I2C state ──────────────────────────────────────────────
+volatile int16_t pan_pos      = 0;
+volatile int16_t pan_target   = 0;
+volatile uint8_t servo_angle  = 90;
+volatile uint8_t i2c_status   = 0;
 volatile uint8_t selected_reg = 0;
 volatile bool    pending_stop = false;
 volatile bool    pending_home = false;
@@ -134,80 +79,61 @@ void onReceive(int numBytes) {
   if (numBytes > 1) {
     uint8_t hi = Wire.read();
     if (selected_reg == REG_CMD) {
-      if (hi == CMD_STOP) pending_stop = true;
+      if      (hi == CMD_STOP) pending_stop = true;
       else if (hi == CMD_HOME) pending_home = true;
-    } else if ((selected_reg == REG_SET_M1_HI || selected_reg == REG_SET_M2_HI) && numBytes >= 3) {
-      uint8_t lo = Wire.read();
-      int16_t val = (int16_t)((hi << 8) | lo);
-      if (selected_reg == REG_SET_M1_HI) m1_target = val;
-      else                               m2_target = val;
+    } else if (selected_reg == REG_SET_PAN_HI && numBytes >= 3) {
+      uint8_t lo  = Wire.read();
+      pan_target  = (int16_t)((hi << 8) | lo);
+    } else if (selected_reg == REG_SET_SERVO) {
+      servo_angle = (hi > 180) ? 180 : hi;
+      arm.write(servo_angle);
     }
   }
 }
 
 void onRequest() {
   switch (selected_reg) {
-    case REG_M1_POS_HI: Wire.write((uint8_t)(m1_pos >> 8));    break;
-    case REG_M1_POS_LO: Wire.write((uint8_t)(m1_pos & 0xFF)); break;
-    case REG_M2_POS_HI: Wire.write((uint8_t)(m2_pos >> 8));    break;
-    case REG_M2_POS_LO: Wire.write((uint8_t)(m2_pos & 0xFF)); break;
-    case REG_STATUS:    Wire.write(i2c_status);                break;
-    default:            Wire.write(0xFF);
+    case REG_PAN_POS_HI:  Wire.write((uint8_t)(pan_pos >> 8));    break;
+    case REG_PAN_POS_LO:  Wire.write((uint8_t)(pan_pos & 0xFF)); break;
+    case REG_SERVO_ANGLE: Wire.write(servo_angle);                 break;
+    case REG_STATUS:      Wire.write(i2c_status);                  break;
+    default:              Wire.write(0xFF);
   }
 }
 
-void strategySetup() {
+// ── Setup / Loop ───────────────────────────────────────────
+void setup() {
+  pan.begin();
+  arm.attach(PIN_SERVO_ARM);
+  arm.write(servo_angle);
+
+  Serial.begin(115200);
   Wire.begin(I2C_ADDRESS);
   Wire.onReceive(onReceive);
   Wire.onRequest(onRequest);
-  Serial.print("[MODE] I2C slave at 0x");
+  Serial.print("[plater] I2C slave at 0x");
   Serial.println(I2C_ADDRESS, HEX);
 }
 
-void strategyLoop() {
+void loop() {
   if (pending_stop) {
     pending_stop = false;
-    m1_target = m1_pos;
-    m2_target = m2_pos;
+    pan_target   = pan_pos;
     Serial.println("[CMD] stop");
   }
 
   if (pending_home) {
     pending_home = false;
-    m1_target = 0;
-    m2_target = 0;
+    pan_target   = 0;
     Serial.println("[CMD] home");
   }
 
-  if (m1_pos != m1_target) {
+  if (pan_pos != pan_target) {
     i2c_status |= 0x01;
-    long steps = m1_target - m1_pos;
-    motor1.step(steps, MAX_SPEED_DEG);
-    m1_pos = m1_target;
+    long steps  = pan_target - pan_pos;
+    pan.step(steps, MAX_SPEED_DEG);
+    pan_pos = pan_target;
     i2c_status &= ~0x01;
-    Serial.print("[M1] pos="); Serial.println(m1_pos);
+    Serial.print("[pan] pos="); Serial.println(pan_pos);
   }
-
-  if (m2_pos != m2_target) {
-    i2c_status |= 0x02;
-    long steps = m2_target - m2_pos;
-    motor2.step(steps, MAX_SPEED_DEG);
-    m2_pos = m2_target;
-    i2c_status &= ~0x02;
-    Serial.print("[M2] pos="); Serial.println(m2_pos);
-  }
-}
-
-#endif  // CONTROL_MODE
-
-// ── Setup / Loop ───────────────────────────────────────────
-void setup() {
-  motor1.begin();
-  motor2.begin();
-  Serial.begin(115200);
-  strategySetup();
-}
-
-void loop() {
-  strategyLoop();
 }
