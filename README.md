@@ -2,6 +2,25 @@
 
 Senior Project for Robotics and Artificial Intelligence Engineering.
 
+## Arduino Firmware (nodes)
+
+Uses [PlatformIO](https://platformio.org/). Install it once with:
+
+```bash
+pipx install platformio
+```
+
+Then for any node (`cooker`, `plating`, `ingredient`, `cutter`):
+
+```bash
+cd nodes/<node>
+pio run                  # compile
+pio run -t upload        # flash to Arduino Nano via USB
+pio device monitor       # serial monitor at 115200 baud
+```
+
+---
+
 ## Deployment
 
 Run once to install systemd services and kiosk mode on the Pi:
