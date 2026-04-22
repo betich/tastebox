@@ -94,27 +94,25 @@ ssh rpi 'journalctl -u tastebox-kiosk  -f'
 
 ## Hardware
 
-### System Overview
+### System Diagram
 
-![](docs/system-overview.jpg)
-_Full cooking and plating system with control architecture_
+![](docs/diagram.jpg)
+_Full system wiring and control architecture_
 
-### Heating & Cooking
+### Cutting Mechanism
 
-![](docs/heating-coils.jpg)
-_Radiant heating elements for precise temperature control_
+![](docs/cutting.jpg)
+_Cutter assembly with lid opener and linear pistons_
 
-### Plating Arm Assembly
+### Ingredient Coil
 
-![](docs/plating-arm.jpg)
-_Gantry-mounted stepper motor arm for precise plating placement_
+![](docs/integredients-coil.jpg)
+_Stepper motor-driven coil for ingredient dispensing_
 
-### Ingredient Mechanism
+### Serving
 
-![](docs/ingredient-dispenser.jpg)
-_Stepper motor-driven ingredient dispensing system_
+![](docs/serving.jpg)
+_Plating arm delivering food to the serving position_
 
-### Secondary Cooking Module
-
-![](docs/cooker-module.jpg)
-_Electric cooker module with integrated I2C control interface_
+![](docs/serving-2.jpg)
+_Alternate view of the serving sequence_
