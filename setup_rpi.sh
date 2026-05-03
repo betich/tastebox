@@ -4,6 +4,7 @@
 # Usage:  bash setup_rpi.sh
 #         bash setup_rpi.sh --no-docker   (skip Docker install)
 #         bash setup_rpi.sh --no-pio      (skip PlatformIO install)
+#         bash setup_rpi.sh --no-kiosk    (skip Chromium kiosk service)
 
 set -euo pipefail
 
@@ -17,10 +18,12 @@ die()   { echo -e "${R}[error]${N} $*" >&2; exit 1; }
 # ── Args ──────────────────────────────────────────────────────────────────────
 SKIP_DOCKER=0
 SKIP_PIO=0
+SKIP_KIOSK=0
 for arg in "$@"; do
   case $arg in
     --no-docker) SKIP_DOCKER=1 ;;
     --no-pio)    SKIP_PIO=1    ;;
+    --no-kiosk)  SKIP_KIOSK=1  ;;
   esac
 done
 
@@ -207,7 +210,84 @@ EOF
   ok "tastebox-web service created and enabled"
 fi
 
-# ── 10. .env file for local dev ───────────────────────────────────────────────
+# ── 10. Kiosk — Chromium fullscreen + permanent display settings ─────────────
+if [[ $SKIP_KIOSK -eq 0 ]]; then
+  info "Installing kiosk dependencies (unclutter, chromium)..."
+  sudo apt-get install -y unclutter 2>/dev/null || true
+
+  CHROMIUM=$(command -v chromium-browser 2>/dev/null || command -v chromium 2>/dev/null || true)
+  if [[ -z "$CHROMIUM" ]]; then
+    sudo apt-get install -y chromium-browser
+    CHROMIUM=$(command -v chromium-browser 2>/dev/null || command -v chromium 2>/dev/null)
+  fi
+  ok "Chromium: $CHROMIUM"
+
+  info "Creating systemd service: tastebox-kiosk..."
+  sudo tee /etc/systemd/system/tastebox-kiosk.service > /dev/null <<EOF
+[Unit]
+Description=Tastebox Kiosk (Chromium fullscreen)
+After=graphical.target tastebox-web.service
+Wants=graphical.target
+
+[Service]
+Type=simple
+User=$USER
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/$USER/.Xauthority
+ExecStartPre=/bin/sleep 8
+ExecStart=$CHROMIUM \\
+  --kiosk \\
+  --app=http://localhost:3000 \\
+  --noerrdialogs \\
+  --disable-infobars \\
+  --disable-session-crashed-bubble \\
+  --disable-component-update \\
+  --check-for-update-interval=31536000 \\
+  --disable-pinch \\
+  --overscroll-history-navigation=0
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=graphical.target
+EOF
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable tastebox-kiosk
+  ok "tastebox-kiosk service created and enabled"
+
+  # ── Permanent display: disable blanking + hide cursor ────────────────────
+  info "Disabling screen blanking and cursor permanently..."
+
+  # Xorg level: DPMS off, blank time 0
+  sudo mkdir -p /etc/X11/xorg.conf.d
+  sudo tee /etc/X11/xorg.conf.d/10-tastebox.conf > /dev/null <<'XEOF'
+Section "ServerFlags"
+  Option "StandbyTime" "0"
+  Option "SuspendTime" "0"
+  Option "OffTime"     "0"
+  Option "BlankTime"   "0"
+EndSection
+XEOF
+
+  # LXDE autostart: runtime xset + unclutter (idempotent)
+  AUTOSTART_DIR=/etc/xdg/lxsession/LXDE-pi
+  AUTOSTART=$AUTOSTART_DIR/autostart
+  sudo mkdir -p "$AUTOSTART_DIR"
+  [[ -f "$AUTOSTART" ]] || sudo tee "$AUTOSTART" > /dev/null <<'AEOF'
+@lxpanel --profile LXDE-pi
+@pcmanfm --desktop --profile LXDE-pi
+AEOF
+  for entry in "@xset s off" "@xset -dpms" "@xset s noblank" "@unclutter -idle 1 -root"; do
+    grep -qF "$entry" "$AUTOSTART" || echo "$entry" | sudo tee -a "$AUTOSTART" > /dev/null
+  done
+
+  ok "Screen blanking disabled and cursor hidden permanently"
+else
+  warn "Skipping kiosk (--no-kiosk)"
+fi
+
+# ── 11. .env file for local dev ───────────────────────────────────────────────
 ENV_FILE="$REPO_DIR/.env"
 if [[ ! -f "$ENV_FILE" ]]; then
   info "Writing .env for local development..."
@@ -242,6 +322,14 @@ if [[ $SKIP_DOCKER -eq 0 ]]; then
 echo "    # Start/stop the web UI:"
 echo "    sudo systemctl start tastebox-web"
 echo "    sudo systemctl status tastebox-web"
+echo "    journalctl -u tastebox-web -f"
+echo ""
+fi
+if [[ $SKIP_KIOSK -eq 0 ]]; then
+echo "    # Start/stop the kiosk:"
+echo "    sudo systemctl start tastebox-kiosk"
+echo "    sudo systemctl status tastebox-kiosk"
+echo "    journalctl -u tastebox-kiosk -f"
 echo ""
 fi
 echo "    # Flash Arduino firmware (from repo root):"
