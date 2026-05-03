@@ -168,7 +168,7 @@ Type=simple
 User=$USER
 WorkingDirectory=$CONTROLLER_DIR
 Environment="PYTHONUNBUFFERED=1"
-ExecStart=$VENV/bin/python api.py --host 0.0.0.0 --port 5000
+ExecStart=$VENV/bin/python master.py
 Restart=on-failure
 RestartSec=5
 
@@ -339,7 +339,7 @@ echo "    $VENV/bin/pio run --target upload -d nodes/ingredient"
 echo "    $VENV/bin/pio run --target upload -d nodes/cutter"
 echo ""
 echo "    # Run controller manually:"
-echo "    cd $CONTROLLER_DIR && $VENV/bin/python api.py"
+echo "    cd $CONTROLLER_DIR && $VENV/bin/python master.py"
 echo ""
 echo "    # Web dev server:"
 echo "    cd $WEB_DIR && npm install && npm run dev"
