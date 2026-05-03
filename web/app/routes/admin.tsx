@@ -57,9 +57,12 @@ export async function action({ request }: ActionFunctionArgs) {
       if (command === "move_pan")    await post("/plating/move", { m1: Math.round(value), m2: 0 })
       if (command === "arm_dur")     await post("/plating/arm",  { action: "goto_b", duration_ms: Math.round(value) })
     } else if (device === "ingredient") {
+      if (command === "fwd_cont")     await post("/ingredient/fwd")
+      if (command === "bwd_cont")     await post("/ingredient/bwd")
       if (command === "dispense")     await post("/ingredient/dispense",
                                         value > 0 ? { duration_ms: Math.round(value) } : undefined)
-      if (command === "retract")      await post("/ingredient/retract")
+      if (command === "retract")      await post("/ingredient/retract",
+                                        value > 0 ? { duration_ms: Math.round(value) } : undefined)
       if (command === "stop")         await post("/ingredient/stop")
       if (command === "set_duration") await post("/ingredient/duration", { ms: Math.round(value) })
     } else if (device === "cutter") {
@@ -353,7 +356,7 @@ type BtnMap = { a: string | null; b: string | null; x: string | null; y: string 
 const FACE_LABELS: Record<Device, BtnMap> = {
   cooker:     { a: "Click",    b: "Reset",    x: null,       y: null       },
   plating:    { a: "Goto A",   b: "Goto B",   x: "Home Pan", y: "Stop Arm" },
-  ingredient: { a: "Dispense", b: "Retract",  x: "Stop",     y: null       },
+  ingredient: { a: "Burst Fwd", b: "Burst Bwd", x: "Stop", y: "Stop"     },
   cutter:     { a: "Open Lid", b: "Close Lid", x: "P2 Ext",  y: "P2 Ret"  },
 }
 
@@ -399,7 +402,10 @@ export default function Admin() {
         right: () => send("move_pan", +15),
       },
       ingredient: {
-        up: () => {}, down: () => {}, left: () => {}, right: () => {},
+        up:    () => send("fwd_cont"),
+        down:  () => send("bwd_cont"),
+        left:  () => send("stop"),
+        right: () => send("stop"),
       },
       cutter: {
         up:    () => send("p1_ext"),
@@ -426,10 +432,10 @@ export default function Admin() {
         y: () => send("stop_arm"),
       },
       ingredient: {
-        a: () => send("dispense", lVal * 20),  // 0–100 → 0–2000 ms
-        b: () => send("retract"),
+        a: () => send("dispense", lVal * 20),  // burst fwd for lVal×20 ms
+        b: () => send("retract",  lVal * 20),  // burst bwd for lVal×20 ms
         x: () => send("stop"),
-        y: () => {},
+        y: () => send("stop"),
       },
       cutter: {
         a: () => send("open_lid",  rVal * 20),
@@ -468,7 +474,7 @@ export default function Admin() {
   const DPAD_LABELS: Record<Device, Partial<Record<"up"|"down"|"left"|"right", string>>> = {
     cooker:     { up: "+1 pos", down: "−1 pos", left: "home" },
     plating:    { up: "+5 pan", down: "−5 pan", left: "−15 pan", right: "+15 pan" },
-    ingredient: {},
+    ingredient: { up: "fwd cont", down: "bwd cont", left: "stop", right: "stop" },
     cutter:     { up: "P1 ext", down: "P1 ret", left: "P2 ret", right: "P2 ext" },
   }
 

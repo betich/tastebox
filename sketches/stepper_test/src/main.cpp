@@ -4,9 +4,9 @@
 // A4988: RESET+SLEEP tied together to 5V (external)
 //        ENABLE → LOW (hardwired or controlled here)
 //        MS1/MS2/MS3 → GND = full step (1.8°, 200 steps/rev)
-#define STEP_PIN   3
-#define DIR_PIN    4
-#define ENABLE_PIN 5
+#define STEP_PIN   2   // ← change if your wiring differs
+#define DIR_PIN    3
+#define ENABLE_PIN 4
 
 // ── Motor: 17HS4401 coil wiring ───────────────────────────
 // 1A/1B → Red(+) / Green(−)   coil A (~20 Ω)

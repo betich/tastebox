@@ -198,6 +198,16 @@ def plating_arm():
 
 # ── ingredient (0x44) ─────────────────────────────────────────────────────────
 
+@app.route("/ingredient/fwd", methods=["POST"])
+def ingredient_fwd():
+    return _safe(lambda: _ingredient.fwd() or {})
+
+
+@app.route("/ingredient/bwd", methods=["POST"])
+def ingredient_bwd():
+    return _safe(lambda: _ingredient.bwd() or {})
+
+
 @app.route("/ingredient/dispense", methods=["POST"])
 def ingredient_dispense():
     data = request.get_json() or {}
@@ -212,7 +222,14 @@ def ingredient_dispense():
 
 @app.route("/ingredient/retract", methods=["POST"])
 def ingredient_retract():
-    return _safe(lambda: _ingredient.retract() or {})
+    data = request.get_json() or {}
+    ms   = data.get("duration_ms")
+    def _do():
+        with _lock:
+            if ms is not None:
+                _ingredient.set_duration(int(ms))
+            _ingredient.retract()
+    return _safe(_do)
 
 
 @app.route("/ingredient/stop", methods=["POST"])

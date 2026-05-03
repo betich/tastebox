@@ -2,15 +2,18 @@ from bus import I2CBus
 from .base import I2CDevice
 
 # Register map — mirrors ingredient/src/main.cpp (I2C slave at 0x44)
-REG_STATUS     = 0x00  # bit0=busy, bit1=direction(0=fwd/1=rev) (read)
-REG_REMAIN_HI  = 0x01  # remaining duration ms high byte (read, unsigned)
-REG_REMAIN_LO  = 0x02  # remaining duration ms low byte (read, unsigned)
+REG_STATUS     = 0x00  # bit0=busy, bit1=direction(0=fwd/1=bwd) (read)
+REG_REMAIN_HI  = 0x01  # remaining duration ms high byte (read, burst only)
+REG_REMAIN_LO  = 0x02  # remaining duration ms low byte (read)
 REG_CMD        = 0x10
-REG_SET_DUR_HI = 0x11  # duration ms high byte (write)
+REG_SET_DUR_HI = 0x11  # burst duration ms high byte (write)
+REG_SET_DUR_LO = 0x12  # burst duration ms low byte  (write, sent with 0x11)
 
-CMD_STOP     = 0x01
-CMD_DISPENSE = 0x02
-CMD_RETRACT  = 0x03
+CMD_STOP      = 0x01
+CMD_FWD_CONT  = 0x02  # non-stop forward
+CMD_BWD_CONT  = 0x03  # non-stop backward
+CMD_FWD_BURST = 0x04  # forward for duration_ms then stop
+CMD_BWD_BURST = 0x05  # backward for duration_ms then stop
 
 DEFAULT_ADDRESS = 0x44
 
@@ -30,19 +33,33 @@ class IngredientDevice(I2CDevice):
     def get_remaining_ms(self) -> int:
         hi = self.bus.read_byte(self.address, REG_REMAIN_HI)
         lo = self.bus.read_byte(self.address, REG_REMAIN_LO)
-        return (hi << 8) | lo  # unsigned — do not use read_int16
+        return (hi << 8) | lo
 
-    # ── commands ─────────────────────────────────────────────
+    # ── duration (for burst commands) ────────────────────────
 
     def set_duration(self, ms: int):
         val = max(0, min(65535, int(ms)))
         self.bus.write_bytes(self.address, REG_SET_DUR_HI, val >> 8, val & 0xFF)
 
+    # ── continuous ───────────────────────────────────────────
+
+    def fwd(self):
+        self.bus.write_bytes(self.address, REG_CMD, CMD_FWD_CONT)
+
+    def bwd(self):
+        self.bus.write_bytes(self.address, REG_CMD, CMD_BWD_CONT)
+
+    # ── burst ────────────────────────────────────────────────
+
     def dispense(self):
-        self.bus.write_bytes(self.address, REG_CMD, CMD_DISPENSE)
+        """Burst forward for the programmed duration."""
+        self.bus.write_bytes(self.address, REG_CMD, CMD_FWD_BURST)
 
     def retract(self):
-        self.bus.write_bytes(self.address, REG_CMD, CMD_RETRACT)
+        """Burst backward for the programmed duration."""
+        self.bus.write_bytes(self.address, REG_CMD, CMD_BWD_BURST)
+
+    # ── stop ─────────────────────────────────────────────────
 
     def stop(self):
         self.bus.write_bytes(self.address, REG_CMD, CMD_STOP)
