@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { MENU } from "../types";
 
 const DRAG_THRESHOLD = 60;
+const MOVE_THRESHOLD = 8;
 
 export function meta() {
   return [{ title: "Tastebox — Choose Your Menu" }];
@@ -15,8 +16,8 @@ export default function Home() {
   const [dragOffset, setDragOffset] = useState(0);
   const [snapping, setSnapping] = useState(false);
 
-  const startX = useRef(0);
-  const dragging = useRef(false);
+  const startX  = useRef(0);
+  const didDrag = useRef(false);
 
   const prev = (index - 1 + MENU.length) % MENU.length;
   const next = (index + 1) % MENU.length;
@@ -26,24 +27,28 @@ export default function Home() {
   }
 
   function onPointerDown(e: React.PointerEvent) {
-    dragging.current = true;
     startX.current = e.clientX;
+    didDrag.current = false;
     setSnapping(false);
   }
 
   function onPointerMove(e: React.PointerEvent) {
-    if (!dragging.current) return;
-    setDragOffset(e.clientX - startX.current);
+    const dx = e.clientX - startX.current;
+    if (Math.abs(dx) >= MOVE_THRESHOLD) {
+      didDrag.current = true;
+      setDragOffset(dx);
+    }
   }
 
   function onPointerUp(e: React.PointerEvent) {
-    if (!dragging.current) return;
-    dragging.current = false;
-    const dx = e.clientX - startX.current;
     setSnapping(true);
     setDragOffset(0);
-    if (dx < -DRAG_THRESHOLD) advance(1);
-    else if (dx > DRAG_THRESHOLD) advance(-1);
+    if (didDrag.current) {
+      const dx = e.clientX - startX.current;
+      if (dx < -DRAG_THRESHOLD) advance(1);
+      else if (dx > DRAG_THRESHOLD) advance(-1);
+    }
+    // didDrag intentionally not reset here — click fires after pointerup
   }
 
   return (
@@ -72,7 +77,7 @@ export default function Home() {
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerLeave={(e) => {
-              if (dragging.current) onPointerUp(e);
+              if (didDrag.current) onPointerUp(e);
             }}
           >
             {/* Inner row — translates as one unit during drag */}
@@ -87,7 +92,7 @@ export default function Home() {
             >
               {/* Left */}
               <div
-                onClick={() => advance(-1)}
+                onClick={() => { if (!didDrag.current) advance(-1); }}
                 className="rounded-[28px] overflow-hidden shrink-0 cursor-pointer"
                 style={{
                   width: 300,
@@ -107,7 +112,7 @@ export default function Home() {
 
               {/* Center */}
               <div
-                onClick={() => navigate(`/personalize?menu=${index}`)}
+                onClick={() => { if (!didDrag.current) navigate(`/personalize?menu=${index}`); }}
                 onPointerDown={() => setPressing(true)}
                 onPointerUp={() => setPressing(false)}
                 onPointerLeave={() => setPressing(false)}
@@ -130,7 +135,7 @@ export default function Home() {
 
               {/* Right */}
               <div
-                onClick={() => advance(1)}
+                onClick={() => { if (!didDrag.current) advance(1); }}
                 className="rounded-[28px] overflow-hidden shrink-0 cursor-pointer"
                 style={{
                   width: 300,
