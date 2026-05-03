@@ -5,9 +5,17 @@
 #define DIR_PIN  3
 #define EN_PIN   4
 
-// ── Parameters ─────────────────────────────────────────────
-const int stepsPerRevolution = 200;  // 1.8°/step motor
-const int stepDelay          = 800;  // µs between pulses (controls speed)
+// ── Motor: 17HS4401 (NEMA 17, 1.8°/step = 200 steps/rev) ──
+// Set MICROSTEP_DIV to match your driver's MS switch setting:
+//   1  → full step   (200 steps/rev)
+//   2  → half step   (400 steps/rev)
+//   8  → 1/8  step   (1600 steps/rev)   ← A4988 default when MS pins float
+//   16 → 1/16 step   (3200 steps/rev)
+//   32 → 1/32 step   (6400 steps/rev)   ← DRV8825 max
+#define MICROSTEP_DIV 1
+
+const int stepsPerRev = 200 * MICROSTEP_DIV;
+const int stepDelay   = 800;  // µs per half-pulse — lower = faster
 
 // ── Helpers ────────────────────────────────────────────────
 void stepMotor(int steps) {
@@ -25,20 +33,22 @@ void setup() {
   pinMode(DIR_PIN,  OUTPUT);
   pinMode(EN_PIN,   OUTPUT);
 
-  digitalWrite(EN_PIN, LOW);  // enable driver (active-low)
+  digitalWrite(EN_PIN, LOW);  // active-low: LOW = enabled
 
   Serial.begin(9600);
-  Serial.println("Stepper test ready");
+  Serial.print("17HS4401 test — ");
+  Serial.print(stepsPerRev);
+  Serial.println(" steps/rev");
 }
 
 void loop() {
   digitalWrite(DIR_PIN, HIGH);
-  Serial.println("CW");
-  stepMotor(stepsPerRevolution);
+  Serial.println("CW  (1 rev)");
+  stepMotor(stepsPerRev);
   delay(1000);
 
   digitalWrite(DIR_PIN, LOW);
-  Serial.println("CCW");
-  stepMotor(stepsPerRevolution);
+  Serial.println("CCW (1 rev)");
+  stepMotor(stepsPerRev);
   delay(1000);
 }
