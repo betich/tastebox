@@ -90,9 +90,11 @@ export function meta() {
 function Joystick({
   label,
   onValue,
+  description,
 }: {
   label: string
   onValue: (v: number) => void
+  description?: string
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [knob, setKnob]     = useState({ x: 0, y: 0 })
@@ -163,19 +165,27 @@ function Joystick({
         />
       </div>
       <span className="text-neutral-400 text-[18px]">{label}: <span className="text-white font-mono">{display}</span></span>
+      {description && <span className="text-neutral-500 text-[13px] text-center max-w-[140px] leading-tight">{description}</span>}
     </div>
   )
 }
 
 // ── D-pad ─────────────────────────────────────────────────────────────────────
 
-function DPad({ onPress }: { onPress: (dir: "up" | "down" | "left" | "right") => void }) {
-  const btn = (dir: "up" | "down" | "left" | "right", label: string, cls: string) => (
+function DPad({
+  onPress,
+  labels,
+}: {
+  onPress: (dir: "up" | "down" | "left" | "right") => void
+  labels?: Partial<Record<"up" | "down" | "left" | "right", string>>
+}) {
+  const btn = (dir: "up" | "down" | "left" | "right", arrow: string, cls: string) => (
     <button
       onClick={() => onPress(dir)}
-      className={`w-16 h-16 rounded-lg bg-neutral-700 active:bg-neutral-500 flex items-center justify-center text-white text-[28px] font-bold select-none ${cls}`}
+      className={`w-16 h-16 rounded-lg bg-neutral-700 active:bg-neutral-500 flex flex-col items-center justify-center text-white select-none ${cls}`}
     >
-      {label}
+      <span className="text-[22px] font-bold">{arrow}</span>
+      {labels?.[dir] && <span className="text-[9px] leading-none text-center px-0.5 opacity-80">{labels[dir]}</span>}
     </button>
   )
   return (
@@ -284,6 +294,51 @@ function StatusRow({ status, device }: { status: StatusData | null; device: Devi
   return null
 }
 
+// ── Device status grid ────────────────────────────────────────────────────────
+
+function DeviceCard({
+  id, addr, ctrlOnline, detected, detail,
+}: {
+  id: Device; addr: string; ctrlOnline: boolean; detected: boolean; detail?: string
+}) {
+  return (
+    <div className="bg-neutral-100 rounded-2xl p-5 flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[20px] font-bold capitalize">{id}</span>
+        <div className={`w-3 h-3 rounded-full ${detected ? "bg-green-400" : ctrlOnline ? "bg-red-400" : "bg-neutral-400"}`} />
+      </div>
+      <span className="text-[13px] text-neutral-500 font-mono">{addr}</span>
+      <span className={`text-[15px] font-semibold ${detected ? "text-green-600" : "text-red-400"}`}>
+        {!ctrlOnline ? "ctrl offline" : detected ? "detected" : "not found"}
+      </span>
+      {detected && detail && (
+        <span className="text-[13px] text-neutral-600 font-mono leading-snug">{detail}</span>
+      )}
+    </div>
+  )
+}
+
+function DeviceStatusGrid({ status }: { status: StatusData | null }) {
+  const ctrlOnline = status?.ok ?? false
+  const ARM_LABELS = ["at A", "at B", "moving"]
+  const c = status?.cooker
+  const p = status?.plating
+  const i = status?.ingredient
+  const x = status?.cutter
+  return (
+    <div className="grid grid-cols-4 gap-4">
+      <DeviceCard id="cooker"     addr="0x42" ctrlOnline={ctrlOnline} detected={c?.online ?? false}
+        detail={c?.online ? `pos ${c.position} · ${c.on ? "ON" : "off"}` : undefined} />
+      <DeviceCard id="plating"    addr="0x43" ctrlOnline={ctrlOnline} detected={p?.online ?? false}
+        detail={p?.online ? `pan ${p.m1_pos} · arm ${ARM_LABELS[p.arm] ?? p.arm}` : undefined} />
+      <DeviceCard id="ingredient" addr="0x44" ctrlOnline={ctrlOnline} detected={i?.online ?? false}
+        detail={i?.online ? `${i.busy ? "busy" : "idle"} · ${i.remaining_ms}ms rem` : undefined} />
+      <DeviceCard id="cutter"     addr="0x45" ctrlOnline={ctrlOnline} detected={x?.online ?? false}
+        detail={x?.online ? `lid:${x.lid_busy?"busy":"idle"} p1:${x.piston1_busy?"busy":"idle"} p2:${x.piston2_busy?"busy":"idle"}` : undefined} />
+    </div>
+  )
+}
+
 // ── Per-device button layout ──────────────────────────────────────────────────
 
 type BtnMap = { a: string | null; b: string | null; x: string | null; y: string | null }
@@ -390,6 +445,24 @@ export default function Admin() {
     ingredient: "—",
     cutter:     "Piston Dur ×20ms",
   }
+  const lStickDesc: Record<Device, string> = {
+    cooker:     "Release → set position (0–4)",
+    plating:    "Release → move pan by steps",
+    ingredient: "Release → set dispense duration",
+    cutter:     "Value used for lid cmds (A/B)",
+  }
+  const rStickDesc: Record<Device, string> = {
+    cooker:     "Not used",
+    plating:    "Release → set arm travel duration",
+    ingredient: "Not used",
+    cutter:     "Not used",
+  }
+  const DPAD_LABELS: Record<Device, Partial<Record<"up"|"down"|"left"|"right", string>>> = {
+    cooker:     { up: "+1 pos", down: "−1 pos", left: "home" },
+    plating:    { up: "+5 pan", down: "−5 pan", left: "−15 pan", right: "+15 pan" },
+    ingredient: {},
+    cutter:     { up: "P1 ext", down: "P1 ret", left: "P2 ret", right: "P2 ext" },
+  }
 
   const handleLStickRelease = () => {
     if (device === "cooker")     send("set_position", Math.round(lVal / 100 * 4))
@@ -414,6 +487,9 @@ export default function Admin() {
             <span className="text-[24px] text-neutral-500">{statusData?.ok ? "online" : "offline"}</span>
           </div>
         </div>
+
+        {/* Device status grid */}
+        <DeviceStatusGrid status={statusData} />
 
         {/* Device selector */}
         <div className="flex gap-4">
@@ -440,7 +516,7 @@ export default function Admin() {
 
         {/* Gamepad area */}
         <div className="flex justify-between items-center px-4">
-          <DPad onPress={handleDpad} />
+          <DPad onPress={handleDpad} labels={DPAD_LABELS[device]} />
           <FaceButtons labels={FACE_LABELS[device]} onPress={handleFace} />
         </div>
 
@@ -450,13 +526,13 @@ export default function Admin() {
             onPointerUp={handleLStickRelease}
             onPointerCancel={handleLStickRelease}
           >
-            <Joystick label={lStickLabel[device]} onValue={setLVal} />
+            <Joystick label={lStickLabel[device]} onValue={setLVal} description={lStickDesc[device]} />
           </div>
           <div
             onPointerUp={handleRStickRelease}
             onPointerCancel={handleRStickRelease}
           >
-            <Joystick label={rStickLabel[device]} onValue={setRVal} />
+            <Joystick label={rStickLabel[device]} onValue={setRVal} description={rStickDesc[device]} />
           </div>
         </div>
 

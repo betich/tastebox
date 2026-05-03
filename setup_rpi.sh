@@ -118,7 +118,7 @@ ok "Python packages installed"
 # ── 5. Node.js 20 (for web dev / typechecking) ───────────────────────────────
 if ! command -v node &>/dev/null || [[ "$(node -e 'process.stdout.write(process.version.slice(1).split(".")[0])')" -lt 20 ]]; then
   info "Installing Node.js 20 via NodeSource..."
-  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - -q
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
   sudo apt-get install -y nodejs -qq
   ok "Node.js $(node --version) installed"
 else
