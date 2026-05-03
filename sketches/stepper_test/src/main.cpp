@@ -1,54 +1,48 @@
 #include <Arduino.h>
 
 // ── Pins ───────────────────────────────────────────────────
-#define STEP_PIN 2
-#define DIR_PIN  3
-#define EN_PIN   4
+// A4988: RESET+SLEEP tied together to 5V (external)
+//        ENABLE → LOW (hardwired or controlled here)
+//        MS1/MS2/MS3 → GND = full step (1.8°, 200 steps/rev)
+#define STEP_PIN   3
+#define DIR_PIN    4
+#define ENABLE_PIN 5
 
-// ── Motor: 17HS4401 (NEMA 17, 1.8°/step = 200 steps/rev) ──
-// Set MICROSTEP_DIV to match your driver's MS switch setting:
-//   1  → full step   (200 steps/rev)
-//   2  → half step   (400 steps/rev)
-//   8  → 1/8  step   (1600 steps/rev)   ← A4988 default when MS pins float
-//   16 → 1/16 step   (3200 steps/rev)
-//   32 → 1/32 step   (6400 steps/rev)   ← DRV8825 max
+// ── Motor: 17HS4401 coil wiring ───────────────────────────
+// 1A/1B → Red(+) / Green(−)   coil A (~20 Ω)
+// 2A/2B → Yellow(+) / Blue(−) coil B (~20 Ω)
+
+// ── Parameters ─────────────────────────────────────────────
+// Full step: 200 steps/rev. Increase MICROSTEP_DIV if MS pins are set.
 #define MICROSTEP_DIV 1
-
 const int stepsPerRev = 200 * MICROSTEP_DIV;
-const int stepDelay   = 800;  // µs per half-pulse — lower = faster
+const int stepDelay   = 800;   // µs per half-pulse — raise to 1500 if jitter persists
 
-// ── Helpers ────────────────────────────────────────────────
-void stepMotor(int steps) {
-  for (int i = 0; i < steps; i++) {
-    digitalWrite(STEP_PIN, HIGH);
-    delayMicroseconds(stepDelay);
-    digitalWrite(STEP_PIN, LOW);
-    delayMicroseconds(stepDelay);
-  }
-}
-
-// ── Setup / Loop ───────────────────────────────────────────
 void setup() {
-  pinMode(STEP_PIN, OUTPUT);
-  pinMode(DIR_PIN,  OUTPUT);
-  pinMode(EN_PIN,   OUTPUT);
+  pinMode(STEP_PIN,   OUTPUT);
+  pinMode(DIR_PIN,    OUTPUT);
+  pinMode(ENABLE_PIN, OUTPUT);
 
-  digitalWrite(EN_PIN, LOW);  // active-low: LOW = enabled
+  digitalWrite(ENABLE_PIN, LOW);   // active-low: LOW = enabled
+  digitalWrite(DIR_PIN,    HIGH);  // set direction before first pulse
+  digitalWrite(STEP_PIN,   LOW);
 
   Serial.begin(9600);
-  Serial.print("17HS4401 test — ");
-  Serial.print(stepsPerRev);
-  Serial.println(" steps/rev");
+  Serial.print("A4988 + 17HS4401  ");
+  Serial.print(stepsPerRev); Serial.println(" steps/rev");
+  Serial.println("CW continuous — send any char to reverse");
 }
 
 void loop() {
-  digitalWrite(DIR_PIN, HIGH);
-  Serial.println("CW  (1 rev)");
-  stepMotor(stepsPerRev);
-  delay(1000);
+  // Reverse direction on any serial input
+  if (Serial.available()) {
+    Serial.read();
+    digitalWrite(DIR_PIN, !digitalRead(DIR_PIN));
+    Serial.println(digitalRead(DIR_PIN) ? "DIR → CW" : "DIR → CCW");
+  }
 
-  digitalWrite(DIR_PIN, LOW);
-  Serial.println("CCW (1 rev)");
-  stepMotor(stepsPerRev);
-  delay(1000);
+  digitalWrite(STEP_PIN, HIGH);
+  delayMicroseconds(stepDelay);
+  digitalWrite(STEP_PIN, LOW);
+  delayMicroseconds(stepDelay);
 }
