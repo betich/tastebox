@@ -1,21 +1,25 @@
+import logging
 import sys
 import time
+
+import log
 from bus import I2CBus
 from serial_bus import SerialBus
 from devices import CookerDevice, PlatingArmDevice, IngredientDevice, CutterDevice
 import server
 from display import SSD1306Display, MachineState
 
+logger = logging.getLogger(__name__)
+
 
 def probe_all(devices):
-    print("\n── Device scan ──────────────────────────")
+    logger.info("── device scan ───────────────────────────")
     results = {}
     for dev in devices:
         ok = dev.ping()
         results[dev] = ok
-        state = "OK" if ok else "NOT FOUND"
-        print(f"  {dev.name:<16} 0x{dev.address:02X}  [{state}]")
-    print("─────────────────────────────────────────\n")
+        logger.info("  %-16s 0x%02X  [%s]", dev.name, dev.address, "OK" if ok else "NOT FOUND")
+    logger.info("──────────────────────────────────────────")
     return results
 
 
@@ -26,51 +30,53 @@ def demo(cooker: CookerDevice, plater: PlatingArmDevice,
     i_ok = ingredient in online
     x_ok = cutter     in online
 
-    print("[demo] cooker status:     ", cooker.status()     if c_ok else "OFFLINE — skipped")
-    print("[demo] plater status:     ", plater.status()     if p_ok else "OFFLINE — skipped")
-    print("[demo] ingredient status: ", ingredient.status() if i_ok else "OFFLINE — skipped")
-    print("[demo] cutter status:     ", cutter.status()     if x_ok else "OFFLINE — skipped")
+    logger.info("cooker status:     %s", cooker.status()     if c_ok else "OFFLINE — skipped")
+    logger.info("plater status:     %s", plater.status()     if p_ok else "OFFLINE — skipped")
+    logger.info("ingredient status: %s", ingredient.status() if i_ok else "OFFLINE — skipped")
+    logger.info("cutter status:     %s", cutter.status()     if x_ok else "OFFLINE — skipped")
 
     if c_ok:
-        print("\n[demo] clicking cooker power...")
+        logger.info("demo: clicking cooker power")
         cooker.click()
         time.sleep(0.5)
-        print("[demo] moving cooker to position 3...")
+        logger.info("demo: moving cooker to position 3")
         cooker.set_position(3)
         time.sleep(0.5)
 
     if p_ok:
-        print("[demo] moving pan stepper +10 steps...")
+        logger.info("demo: moving pan stepper +10 steps")
         plater.move_pan(10)
         time.sleep(0.5)
-        print("[demo] moving arm to position B...")
+        logger.info("demo: moving arm to position B")
         plater.goto_b()
         time.sleep(0.5)
 
     if i_ok:
-        print("[demo] dispensing ingredient (default duration)...")
+        logger.info("demo: dispensing ingredient (default duration)")
         ingredient.dispense()
         time.sleep(0.5)
 
     if x_ok:
-        print("[demo] opening lid...")
+        logger.info("demo: opening lid")
         cutter.open_lid()
         time.sleep(0.5)
 
     if p_ok:
-        print("[demo] homing arm to position A...")
+        logger.info("demo: homing arm to position A")
         plater.goto_a()
-        print("[demo] homing plater pan...")
+        logger.info("demo: homing plater pan")
         plater.home_pan()
     if c_ok:
-        print("[demo] resetting cooker position...")
+        logger.info("demo: resetting cooker position")
         cooker.reset()
     if i_ok:
-        print("[demo] stopping ingredient...")
+        logger.info("demo: stopping ingredient")
         ingredient.stop()
     if x_ok:
-        print("[demo] closing lid...")
+        logger.info("demo: closing lid")
         cutter.close_lid()
+
+    logger.info("demo: complete")
 
 
 def main_i2c():
@@ -88,7 +94,7 @@ def main_i2c():
 
         if offline:
             names = ", ".join(d.name for d in offline)
-            print(f"[WARN] offline devices will be skipped: {names}")
+            logger.warning("offline devices will be skipped: %s", names)
 
         # Always start the API server so the web UI can connect
         server.init(cooker, plater, ingredient, cutter, display)
@@ -98,18 +104,17 @@ def main_i2c():
         if online:
             demo(cooker, plater, ingredient, cutter, online)
         else:
-            print("[master] no devices found — running headless (API still available)")
+            logger.warning("no devices found — running headless (API still available)")
 
-        print("[master] serving — Ctrl-C to quit")
+        logger.info("serving — Ctrl-C to quit")
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
-            print("\n[master] shutting down")
+            logger.info("shutting down")
 
 
 def main_serial(cooker_port, plater_port, ingredient_port, cutter_port):
-    # Each node has its own USB serial connection — one SerialBus per device.
     display = SSD1306Display()
     buses = [
         SerialBus(cooker_port),
@@ -125,13 +130,12 @@ def main_serial(cooker_port, plater_port, ingredient_port, cutter_port):
 
         devices = [cooker, plater, ingredient, cutter]
         results = probe_all(devices)
-
         online  = {d for d, ok in results.items() if ok}
         offline = set(devices) - online
 
         if offline:
             names = ", ".join(d.name for d in offline)
-            print(f"[WARN] offline devices will be skipped: {names}")
+            logger.warning("offline devices will be skipped: %s", names)
 
         server.init(cooker, plater, ingredient, cutter, display)
         server.start()
@@ -140,29 +144,33 @@ def main_serial(cooker_port, plater_port, ingredient_port, cutter_port):
         if online:
             demo(cooker, plater, ingredient, cutter, online)
         else:
-            print("[master] no devices found — running headless (API still available)")
+            logger.warning("no devices found — running headless (API still available)")
 
-        print("[master] serving — Ctrl-C to quit")
+        logger.info("serving — Ctrl-C to quit")
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
-            print("\n[master] shutting down")
+            logger.info("shutting down")
     finally:
         for b in buses:
             b.close()
 
 
 def main():
+    log.setup()
+    logger.info("Tastebox controller starting")
+
     if "--serial" in sys.argv:
-        # Usage: python master.py --serial /dev/ttyUSB0 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3
         ports = [a for a in sys.argv if a.startswith('/dev/') or a.startswith('COM')]
         if len(ports) < 4:
-            print("Serial mode requires 4 ports: cooker plater ingredient cutter")
-            print("  python master.py --serial /dev/ttyUSB0 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3")
+            logger.error("serial mode requires 4 ports: cooker plater ingredient cutter")
+            logger.error("  python master.py --serial /dev/ttyUSB0 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3")
             sys.exit(1)
+        logger.info("mode: serial  ports=%s", ports[:4])
         main_serial(*ports[:4])
     else:
+        logger.info("mode: I2C  bus=1")
         main_i2c()
 
 

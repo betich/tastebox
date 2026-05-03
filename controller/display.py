@@ -1,6 +1,9 @@
+import logging
 import threading
 import time
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 I2C_ADDRESS = 0x3C
 
@@ -36,9 +39,9 @@ class SSD1306Display:
             from luma.oled.device import ssd1306
             serial = i2c(port=1, address=I2C_ADDRESS)
             self._device = ssd1306(serial, width=128, height=64)
-            print("[display] SSD1306 initialised")
+            logger.info("SSD1306 initialised at 0x%02X", I2C_ADDRESS)
         except Exception as e:
-            print(f"[display] init skipped (headless): {e}")
+            logger.warning("SSD1306 init skipped (headless): %s", e)
 
     # ── public API ────────────────────────────────────────────
 

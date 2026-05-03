@@ -3,10 +3,13 @@ Flask HTTP server — exposes all I2C device commands over REST.
 The web frontend (CONTROLLER_API_URL, default http://localhost:5000) talks here.
 Start via server.start() from master.py; runs in a daemon thread.
 """
+import logging
 import threading
 from flask import Flask, jsonify, request
 
 from display import SSD1306Display, MachineState
+
+logger = logging.getLogger(__name__)
 
 app  = Flask(__name__)
 _lock = threading.Lock()
@@ -36,7 +39,19 @@ def start(port: int = 5000):
         name="flask",
     )
     t.start()
-    print(f"[server] listening on port {port}")
+    logger.info("HTTP API listening on port %d", port)
+
+
+# ── request logging ───────────────────────────────────────────────────────────
+
+@app.after_request
+def _log_request(response):
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        logger.info("POST %-28s %s → %d", request.path, body or "", response.status_code)
+    elif response.status_code >= 400:
+        logger.warning("GET  %-28s → %d", request.path, response.status_code)
+    return response
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -47,6 +62,7 @@ def _safe(fn):
         result = fn()
         return jsonify({"ok": True, **(result or {})})
     except Exception as e:
+        logger.warning("device error: %s", e)
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
@@ -110,6 +126,7 @@ def set_state():
         return jsonify({"ok": False, "error": f"unknown state: {raw}"}), 400
     if _display:
         _display.set_state(state, subtitle=subtitle)
+    logger.info("display state → %s%s", state.value, f" [{subtitle}]" if subtitle else "")
     return jsonify({"ok": True, "state": state.value})
 
 
