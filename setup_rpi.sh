@@ -112,7 +112,7 @@ info "Installing Python packages..."
   smbus2 \
   pyserial \
   flask \
-  "luma.lcd" \
+  "luma.oled" \
   pillow \
   RPi.GPIO \
   -q

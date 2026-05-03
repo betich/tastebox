@@ -60,17 +60,16 @@
 
 ## Wiring
 
-### ST7735 LCD → RPi SPI0
+### SSD1306 OLED (0.96") → RPi I2C1
 
-| ST7735 | RPi GPIO |
-|--------|----------|
-| SCLK   | GPIO 11  |
-| MOSI   | GPIO 10  |
-| CS     | GPIO 8 (CE0) |
-| DC     | GPIO 24  |
-| RST    | GPIO 25  |
-| VCC    | 3.3V     |
-| GND    | GND      |
+| SSD1306 | RPi GPIO        |
+|---------|-----------------|
+| SDA     | GPIO 2 (SDA1)   |
+| SCL     | GPIO 3 (SCL1)   |
+| VCC     | 3.3V            |
+| GND     | GND             |
+
+I2C address: `0x3C`
 
 ### Arduino Nodes → RPi I2C
 

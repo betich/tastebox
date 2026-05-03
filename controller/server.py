@@ -6,7 +6,7 @@ Start via server.start() from master.py; runs in a daemon thread.
 import threading
 from flask import Flask, jsonify, request
 
-from display import ST7735Display, MachineState
+from display import SSD1306Display, MachineState
 
 app  = Flask(__name__)
 _lock = threading.Lock()
@@ -16,10 +16,10 @@ _cooker     = None
 _plater     = None
 _ingredient = None
 _cutter     = None
-_display: ST7735Display | None = None
+_display: SSD1306Display | None = None
 
 
-def init(cooker, plater, ingredient, cutter, display: ST7735Display | None = None):
+def init(cooker, plater, ingredient, cutter, display: SSD1306Display | None = None):
     global _cooker, _plater, _ingredient, _cutter, _display
     _cooker     = cooker
     _plater     = plater

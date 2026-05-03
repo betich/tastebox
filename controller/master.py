@@ -4,7 +4,7 @@ from bus import I2CBus
 from serial_bus import SerialBus
 from devices import CookerDevice, PlatingArmDevice, IngredientDevice, CutterDevice
 import server
-from display import ST7735Display, MachineState
+from display import SSD1306Display, MachineState
 
 
 def probe_all(devices):
@@ -74,7 +74,7 @@ def demo(cooker: CookerDevice, plater: PlatingArmDevice,
 
 
 def main_i2c():
-    display = ST7735Display()
+    display = SSD1306Display()
     with I2CBus(bus_num=1) as bus:
         cooker     = CookerDevice(bus)
         plater     = PlatingArmDevice(bus)
@@ -103,7 +103,7 @@ def main_i2c():
 
 def main_serial(cooker_port, plater_port, ingredient_port, cutter_port):
     # Each node has its own USB serial connection — one SerialBus per device.
-    display = ST7735Display()
+    display = SSD1306Display()
     buses = [
         SerialBus(cooker_port),
         SerialBus(plater_port),

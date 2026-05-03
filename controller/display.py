@@ -2,9 +2,7 @@ import threading
 import time
 from enum import Enum
 
-# RPi SPI0 GPIO pins for ST7735
-DC_PIN  = 24
-RST_PIN = 25
+I2C_ADDRESS = 0x3C
 
 
 class MachineState(Enum):
@@ -22,7 +20,7 @@ _LABELS = {
 }
 
 
-class ST7735Display:
+class SSD1306Display:
     def __init__(self):
         self._device = None
         self._lock   = threading.Lock()
@@ -34,13 +32,11 @@ class ST7735Display:
 
     def _init_device(self):
         try:
-            from luma.core.interface.serial import spi
-            from luma.lcd.device import st7735
-            serial = spi(port=0, device=0, gpio_DC=DC_PIN, gpio_RST=RST_PIN,
-                         bus_speed_hz=16_000_000)
-            self._device = st7735(serial, width=128, height=160,
-                                  h_offset=2, v_offset=1)
-            print("[display] ST7735 initialised")
+            from luma.core.interface.serial import i2c
+            from luma.oled.device import ssd1306
+            serial = i2c(port=1, address=I2C_ADDRESS)
+            self._device = ssd1306(serial, width=128, height=64)
+            print("[display] SSD1306 initialised")
         except Exception as e:
             print(f"[display] init skipped (headless): {e}")
 
@@ -96,10 +92,10 @@ class ST7735Display:
         label = _LABELS[state]
         try:
             font_big = ImageFont.truetype(
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16
             )
             font_sm = ImageFont.truetype(
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10
             )
         except Exception:
             font_big = ImageFont.load_default()
@@ -111,12 +107,10 @@ class ST7735Display:
                 draw.rectangle((0, 0, W, H), fill="black")
 
                 lb = draw.textbbox((0, 0), label, font=font_big)
-                lw  = lb[2] - lb[0]
-                lh  = lb[3] - lb[1]
-                draw.text(
-                    ((W - lw) // 2, H // 2 - lh - 6),
-                    label, font=font_big, fill="white",
-                )
+                lw = lb[2] - lb[0]
+                lh = lb[3] - lb[1]
+                y_label = (H // 2 - lh) // 2 if subtitle else (H - lh) // 2
+                draw.text(((W - lw) // 2, y_label), label, font=font_big, fill="white")
 
                 if subtitle:
                     sb = draw.textbbox((0, 0), subtitle, font=font_sm)
