@@ -198,43 +198,44 @@ def plating_arm():
 
 # ── ingredient (0x44) ─────────────────────────────────────────────────────────
 
-@app.route("/ingredient/fwd", methods=["POST"])
-def ingredient_fwd():
-    return _safe(lambda: _ingredient.fwd() or {})
+@app.route("/ingredient/a/fwd",      methods=["POST"])
+def ingredient_a_fwd():      return _safe(lambda: _ingredient.a_fwd()      or {})
 
+@app.route("/ingredient/a/bwd",      methods=["POST"])
+def ingredient_a_bwd():      return _safe(lambda: _ingredient.a_bwd()      or {})
 
-@app.route("/ingredient/bwd", methods=["POST"])
-def ingredient_bwd():
-    return _safe(lambda: _ingredient.bwd() or {})
+@app.route("/ingredient/a/dispense", methods=["POST"])
+def ingredient_a_dispense(): return _safe(lambda: _ingredient.dispense()   or {})
 
+@app.route("/ingredient/a/retract",  methods=["POST"])
+def ingredient_a_retract():  return _safe(lambda: _ingredient.retract()    or {})
 
-@app.route("/ingredient/dispense", methods=["POST"])
-def ingredient_dispense():
-    data = request.get_json() or {}
-    ms   = data.get("duration_ms")
-    def _do():
-        with _lock:
-            if ms is not None:
-                _ingredient.set_duration(int(ms))
-            _ingredient.dispense()
-    return _safe(_do)
+@app.route("/ingredient/a/stop",     methods=["POST"])
+def ingredient_a_stop():     return _safe(lambda: _ingredient.stop_a()     or {})
 
+@app.route("/ingredient/b/fwd",      methods=["POST"])
+def ingredient_b_fwd():      return _safe(lambda: _ingredient.b_fwd()      or {})
 
-@app.route("/ingredient/retract", methods=["POST"])
-def ingredient_retract():
-    data = request.get_json() or {}
-    ms   = data.get("duration_ms")
-    def _do():
-        with _lock:
-            if ms is not None:
-                _ingredient.set_duration(int(ms))
-            _ingredient.retract()
-    return _safe(_do)
+@app.route("/ingredient/b/bwd",      methods=["POST"])
+def ingredient_b_bwd():      return _safe(lambda: _ingredient.b_bwd()      or {})
 
+@app.route("/ingredient/b/dispense", methods=["POST"])
+def ingredient_b_dispense(): return _safe(lambda: _ingredient.b_dispense() or {})
 
-@app.route("/ingredient/stop", methods=["POST"])
-def ingredient_stop():
-    return _safe(lambda: _ingredient.stop() or {})
+@app.route("/ingredient/b/retract",  methods=["POST"])
+def ingredient_b_retract():  return _safe(lambda: _ingredient.b_retract()  or {})
+
+@app.route("/ingredient/b/stop",     methods=["POST"])
+def ingredient_b_stop():     return _safe(lambda: _ingredient.stop_b()     or {})
+
+@app.route("/ingredient/stop",       methods=["POST"])
+def ingredient_stop():       return _safe(lambda: _ingredient.stop()       or {})
+
+@app.route("/ingredient/revolutions", methods=["POST"])
+def ingredient_revolutions():
+    data  = request.get_json() or {}
+    steps = int(data.get("steps", 200))
+    return _safe(lambda: _ingredient.set_steps_per_rev(steps) or {})
 
 
 @app.route("/ingredient/duration", methods=["POST"])

@@ -57,14 +57,18 @@ export async function action({ request }: ActionFunctionArgs) {
       if (command === "move_pan")    await post("/plating/move", { m1: Math.round(value), m2: 0 })
       if (command === "arm_dur")     await post("/plating/arm",  { action: "goto_b", duration_ms: Math.round(value) })
     } else if (device === "ingredient") {
-      if (command === "fwd_cont")     await post("/ingredient/fwd")
-      if (command === "bwd_cont")     await post("/ingredient/bwd")
-      if (command === "dispense")     await post("/ingredient/dispense",
-                                        value > 0 ? { duration_ms: Math.round(value) } : undefined)
-      if (command === "retract")      await post("/ingredient/retract",
-                                        value > 0 ? { duration_ms: Math.round(value) } : undefined)
-      if (command === "stop")         await post("/ingredient/stop")
-      if (command === "set_duration") await post("/ingredient/duration", { ms: Math.round(value) })
+      if (command === "a_fwd")      await post("/ingredient/a/fwd")
+      if (command === "a_bwd")      await post("/ingredient/a/bwd")
+      if (command === "a_dispense") await post("/ingredient/a/dispense")
+      if (command === "a_retract")  await post("/ingredient/a/retract")
+      if (command === "a_stop")     await post("/ingredient/a/stop")
+      if (command === "b_fwd")      await post("/ingredient/b/fwd")
+      if (command === "b_bwd")      await post("/ingredient/b/bwd")
+      if (command === "b_dispense") await post("/ingredient/b/dispense")
+      if (command === "b_retract")  await post("/ingredient/b/retract")
+      if (command === "b_stop")     await post("/ingredient/b/stop")
+      if (command === "stop")       await post("/ingredient/stop")
+      if (command === "set_rev")    await post("/ingredient/revolutions", { steps: Math.round(value) })
     } else if (device === "cutter") {
       if (command === "open_lid")   await post("/cutter/lid",
                                       { action: "open",  ...(value > 0 ? { duration_ms: Math.round(value) } : {}) })
@@ -356,7 +360,7 @@ type BtnMap = { a: string | null; b: string | null; x: string | null; y: string 
 const FACE_LABELS: Record<Device, BtnMap> = {
   cooker:     { a: "Click",    b: "Reset",    x: null,       y: null       },
   plating:    { a: "Goto A",   b: "Goto B",   x: "Home Pan", y: "Stop Arm" },
-  ingredient: { a: "Burst Fwd", b: "Burst Bwd", x: "Stop", y: "Stop"     },
+  ingredient: { a: "A Dispense", b: "B Dispense", x: "Stop A", y: "Stop B" },
   cutter:     { a: "Open Lid", b: "Close Lid", x: "P2 Ext",  y: "P2 Ret"  },
 }
 
@@ -402,10 +406,10 @@ export default function Admin() {
         right: () => send("move_pan", +15),
       },
       ingredient: {
-        up:    () => send("fwd_cont"),
-        down:  () => send("bwd_cont"),
-        left:  () => send("stop"),
-        right: () => send("stop"),
+        up:    () => send("a_fwd"),
+        down:  () => send("a_bwd"),
+        left:  () => send("b_fwd"),
+        right: () => send("b_bwd"),
       },
       cutter: {
         up:    () => send("p1_ext"),
@@ -432,10 +436,10 @@ export default function Admin() {
         y: () => send("stop_arm"),
       },
       ingredient: {
-        a: () => send("dispense", lVal * 20),  // burst fwd for lVal×20 ms
-        b: () => send("retract",  lVal * 20),  // burst bwd for lVal×20 ms
-        x: () => send("stop"),
-        y: () => send("stop"),
+        a: () => send("a_dispense"),  // A one revolution
+        b: () => send("b_dispense"),  // B one revolution
+        x: () => send("a_stop"),
+        y: () => send("b_stop"),
       },
       cutter: {
         a: () => send("open_lid",  rVal * 20),
@@ -450,7 +454,7 @@ export default function Admin() {
   const lStickLabel: Record<Device, string> = {
     cooker:     "Position (0–4)",
     plating:    "Pan Steps",
-    ingredient: "Duration ×20ms",
+    ingredient: "Steps/rev (0–400)",
     cutter:     "Lid Dur ×20ms",
   }
   const rStickLabel: Record<Device, string> = {
@@ -462,7 +466,7 @@ export default function Admin() {
   const lStickDesc: Record<Device, string> = {
     cooker:     "Release → set position (0–4)",
     plating:    "Release → move pan by steps",
-    ingredient: "Release → set dispense duration",
+    ingredient: "Release → set steps per revolution",
     cutter:     "Value used for lid cmds (A/B)",
   }
   const rStickDesc: Record<Device, string> = {
@@ -474,14 +478,14 @@ export default function Admin() {
   const DPAD_LABELS: Record<Device, Partial<Record<"up"|"down"|"left"|"right", string>>> = {
     cooker:     { up: "+1 pos", down: "−1 pos", left: "home" },
     plating:    { up: "+5 pan", down: "−5 pan", left: "−15 pan", right: "+15 pan" },
-    ingredient: { up: "fwd cont", down: "bwd cont", left: "stop", right: "stop" },
+    ingredient: { up: "A fwd", down: "A bwd", left: "B fwd", right: "B bwd" },
     cutter:     { up: "P1 ext", down: "P1 ret", left: "P2 ret", right: "P2 ext" },
   }
 
   const handleLCommit = useCallback((v: number) => {
     if (device === "cooker")     send("set_position", Math.round(v / 100 * 4))
     if (device === "plating")    send("move_pan",     Math.round((v - 50) * 4))
-    if (device === "ingredient") send("set_duration", v * 20)
+    if (device === "ingredient") send("set_rev", Math.round(v / 100 * 400))  // 0–400 steps
   }, [device, send])
   const handleRCommit = useCallback((v: number) => {
     if (device === "plating") send("arm_dur", v * 50)
