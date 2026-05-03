@@ -57,8 +57,8 @@ void enable()  { digitalWrite(PIN_ENA, LOW);  digitalWrite(PIN_ENA2, LOW);  }
 void disable() { digitalWrite(PIN_ENA, HIGH); digitalWrite(PIN_ENA2, HIGH); }
 
 void setDir(bool reverse) {
-  digitalWrite(PIN_DIR,  reverse ? LOW : HIGH);
-  digitalWrite(PIN_DIR2, reverse ? LOW : HIGH);
+  digitalWrite(PIN_DIR,  reverse ? LOW  : HIGH);  // Stepper B
+  digitalWrite(PIN_DIR2, reverse ? HIGH : LOW);   // Stepper A (dir inverted)
   delayMicroseconds(5);
 }
 
