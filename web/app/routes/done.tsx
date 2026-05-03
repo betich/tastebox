@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router"
 import { MENU } from "../types"
+import { setDisplayState } from "../lib/controller.server"
+
+export async function loader() {
+  await setDisplayState("finished")
+  return {}
+}
 
 const CLOSE_SECS = 5
 

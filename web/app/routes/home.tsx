@@ -1,6 +1,12 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { MENU } from "../types";
+import { setDisplayState } from "../lib/controller.server"
+
+export async function loader() {
+  await setDisplayState("idle")
+  return {}
+}
 
 const DRAG_THRESHOLD = 60;
 const MOVE_THRESHOLD = 8;

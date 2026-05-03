@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { useNavigate, useSearchParams, useFetcher, useLoaderData } from "react-router"
 import type { ActionFunctionArgs } from "react-router"
 import { MENU } from "../types"
+import { cookerClick, cookerSetPosition, platingMove, setDisplayState } from "../lib/controller.server"
 
 const COOK_MS = 60_000
 
@@ -41,36 +42,21 @@ export async function loader(): Promise<LoaderData> {
 
 // ── Server action ─────────────────────────────────────────────────────────────
 export async function action({ request }: ActionFunctionArgs) {
-  const API = process.env.CONTROLLER_API_URL ?? "http://localhost:5000"
-
   const form     = await request.formData()
   const menu     = parseInt(form.get("menu")     as string ?? "0")
   const umami    = parseInt(form.get("umami")    as string ?? "2")
   const oiliness = parseInt(form.get("oiliness") as string ?? "3")
 
-  const cookerPos = UMAMI_TO_POSITION[umami]    ?? 2
-  const m1Steps   = MENU_TO_M1_STEPS[menu]      ?? 0
+  const cookerPos = UMAMI_TO_POSITION[umami]       ?? 2
+  const m1Steps   = MENU_TO_M1_STEPS[menu]         ?? 0
   const m2Steps   = OILINESS_TO_M2_STEPS[oiliness] ?? 50
 
-  const menuName = MENU[menu]?.name ?? ""
   try {
     await Promise.all([
-      fetch(`${API}/cooker/click`, { method: "POST" }),
-      fetch(`${API}/cooker/position`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ position: cookerPos }),
-      }),
-      fetch(`${API}/plating/move`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ m1: m1Steps, m2: m2Steps }),
-      }),
-      fetch(`${API}/state`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state: "cooking", subtitle: menuName }),
-      }).catch(() => {}),
+      cookerClick(),
+      cookerSetPosition(cookerPos),
+      platingMove(m1Steps, m2Steps),
+      setDisplayState("cooking", MENU[menu]?.name ?? ""),
     ])
     return { ok: true }
   } catch (err) {
