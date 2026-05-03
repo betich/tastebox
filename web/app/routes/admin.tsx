@@ -90,16 +90,19 @@ export function meta() {
 function Joystick({
   label,
   onValue,
+  onCommit,
   description,
 }: {
   label: string
   onValue: (v: number) => void
+  onCommit?: (v: number) => void
   description?: string
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const [knob, setKnob]     = useState({ x: 0, y: 0 })
+  const [knob, setKnob]       = useState({ x: 0, y: 0 })
   const [display, setDisplay] = useState(50)
   const dragging = useRef(false)
+  const lastVal  = useRef(50)  // sync ref so onCommit always gets the real value
   const R = 52  // container radius
 
   const updateFromPointer = useCallback((e: React.PointerEvent) => {
@@ -116,6 +119,7 @@ function Joystick({
     setKnob(pos)
     // Y axis: top → 100, center → 50, bottom → 0
     const val = Math.round(50 - (pos.y / R) * 50)
+    lastVal.current = val
     setDisplay(val)
     onValue(val)
   }, [onValue, R])
@@ -131,6 +135,8 @@ function Joystick({
   }
   const handlePointerUp = () => {
     dragging.current = false
+    onCommit?.(lastVal.current)
+    lastVal.current = 50
     setKnob({ x: 0, y: 0 })
     setDisplay(50)
     onValue(50)
@@ -465,14 +471,14 @@ export default function Admin() {
     cutter:     { up: "P1 ext", down: "P1 ret", left: "P2 ret", right: "P2 ext" },
   }
 
-  const handleLStickRelease = () => {
-    if (device === "cooker")     send("set_position", Math.round(lVal / 100 * 4))
-    if (device === "plating")    send("move_pan",     Math.round((lVal - 50) * 4))
-    if (device === "ingredient") send("set_duration", lVal * 20)
-  }
-  const handleRStickRelease = () => {
-    if (device === "plating") send("arm_dur", rVal * 50)
-  }
+  const handleLCommit = useCallback((v: number) => {
+    if (device === "cooker")     send("set_position", Math.round(v / 100 * 4))
+    if (device === "plating")    send("move_pan",     Math.round((v - 50) * 4))
+    if (device === "ingredient") send("set_duration", v * 20)
+  }, [device, send])
+  const handleRCommit = useCallback((v: number) => {
+    if (device === "plating") send("arm_dur", v * 50)
+  }, [device, send])
 
   const DEVICES: Device[] = ["cooker", "plating", "ingredient", "cutter"]
 
@@ -531,18 +537,8 @@ export default function Admin() {
 
         {/* Sticks */}
         <div className="flex justify-between items-start px-4 pt-4">
-          <div
-            onPointerUp={handleLStickRelease}
-            onPointerCancel={handleLStickRelease}
-          >
-            <Joystick label={lStickLabel[device]} onValue={setLVal} description={lStickDesc[device]} />
-          </div>
-          <div
-            onPointerUp={handleRStickRelease}
-            onPointerCancel={handleRStickRelease}
-          >
-            <Joystick label={rStickLabel[device]} onValue={setRVal} description={rStickDesc[device]} />
-          </div>
+          <Joystick label={lStickLabel[device]} onValue={setLVal} onCommit={handleLCommit} description={lStickDesc[device]} />
+          <Joystick label={rStickLabel[device]} onValue={setRVal} onCommit={handleRCommit} description={rStickDesc[device]} />
         </div>
 
         {/* System state buttons */}
