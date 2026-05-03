@@ -7,7 +7,9 @@ REG_CMD          = 0x10
 REG_SERVO1_ANGLE = 0x11  # servo1 (pin 9) angle 0-180 (write)
 REG_SERVO2_ANGLE = 0x12  # servo2 (pin 11) angle 0-180 (write)
 REG_LID_DUR_HI   = 0x13  # lid duration ms high byte (write)
+REG_LID_DUR_LO   = 0x14  # lid duration ms low byte (write, follows hi)
 REG_PST_DUR_HI   = 0x15  # piston duration ms high byte (write)
+REG_PST_DUR_LO   = 0x16  # piston duration ms low byte (write, follows hi)
 
 CMD_STOP_ALL    = 0x01
 CMD_OPEN_LID    = 0x02

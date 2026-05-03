@@ -58,36 +58,87 @@ bool          p2_running  = false;
 
 Servo lid_servo, servo1, servo2;
 
+// ── Register access (shared by I2C and serial) ─────────────
+
+uint8_t processRead(uint8_t reg) {
+  switch (reg) {
+    case REG_STATUS: return i2c_status;
+    default:         return 0xFF;
+  }
+}
+
+void processWrite(uint8_t reg, uint8_t* data, uint8_t len) {
+  if (len < 1) return;
+  switch (reg) {
+    case REG_CMD:
+      pending_cmd = data[0];
+      break;
+    case REG_SERVO1_ANGLE:
+      servo1.write((data[0] > 180) ? 180 : data[0]);
+      break;
+    case REG_SERVO2_ANGLE:
+      servo2.write((data[0] > 180) ? 180 : data[0]);
+      break;
+    case REG_LID_DUR_HI:
+      if (len >= 2) lid_dur = (uint16_t)((data[0] << 8) | data[1]);
+      break;
+    case REG_PST_DUR_HI:
+      if (len >= 2) pst_dur = (uint16_t)((data[0] << 8) | data[1]);
+      break;
+  }
+}
+
+// ── I2C callbacks ──────────────────────────────────────────
+
 void onReceive(int numBytes) {
   if (numBytes < 1) return;
   selected_reg = Wire.read();
-
   if (numBytes > 1) {
-    uint8_t hi = Wire.read();
-    switch (selected_reg) {
-      case REG_CMD:
-        pending_cmd = hi;
-        break;
-      case REG_SERVO1_ANGLE:
-        servo1.write((hi > 180) ? 180 : hi);
-        break;
-      case REG_SERVO2_ANGLE:
-        servo2.write((hi > 180) ? 180 : hi);
-        break;
-      case REG_LID_DUR_HI:
-        if (numBytes >= 3) lid_dur = (uint16_t)((hi << 8) | Wire.read());
-        break;
-      case REG_PST_DUR_HI:
-        if (numBytes >= 3) pst_dur = (uint16_t)((hi << 8) | Wire.read());
-        break;
-    }
+    uint8_t data[8];
+    uint8_t len = 0;
+    while (Wire.available() && len < (uint8_t)sizeof(data)) data[len++] = Wire.read();
+    processWrite(selected_reg, data, len);
   }
 }
 
 void onRequest() {
-  switch (selected_reg) {
-    case REG_STATUS: Wire.write(i2c_status); break;
-    default:         Wire.write(0xFF);
+  Wire.write(processRead(selected_reg));
+}
+
+// ── Serial handler ─────────────────────────────────────────
+// Protocol: "R HH\n" → "!HH\n"  |  "W HH DD...\n" → "!OK\n"
+
+void handleSerial() {
+  static char buf[48];
+  static uint8_t idx = 0;
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (idx > 0) {
+        buf[idx] = '\0';
+        idx = 0;
+        if (buf[0] == 'R' && buf[1] == ' ') {
+          uint8_t reg = (uint8_t)strtoul(buf + 2, nullptr, 16);
+          uint8_t val = processRead(reg);
+          Serial.print('!');
+          if (val < 0x10) Serial.print('0');
+          Serial.println(val, HEX);
+        } else if (buf[0] == 'W' && buf[1] == ' ') {
+          char* p = buf + 2;
+          uint8_t reg = (uint8_t)strtoul(p, &p, 16);
+          uint8_t data[8];
+          uint8_t len = 0;
+          while (*p && len < (uint8_t)sizeof(data)) {
+            while (*p == ' ') p++;
+            if (*p) data[len++] = (uint8_t)strtoul(p, &p, 16);
+          }
+          processWrite(reg, data, len);
+          Serial.println("!OK");
+        }
+      }
+    } else if (idx < (uint8_t)sizeof(buf) - 1) {
+      buf[idx++] = c;
+    }
   }
 }
 
@@ -109,11 +160,12 @@ void setup() {
   Wire.begin(I2C_ADDRESS);
   Wire.onReceive(onReceive);
   Wire.onRequest(onRequest);
-  Serial.print("[cutter] I2C slave at 0x");
-  Serial.println(I2C_ADDRESS, HEX);
+  Serial.println("[cutter] ready (I2C 0x45 | serial 115200)");
 }
 
 void loop() {
+  handleSerial();
+
   // Handle pending command
   if (pending_cmd) {
     uint8_t cmd = pending_cmd;

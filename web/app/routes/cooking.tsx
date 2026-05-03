@@ -52,6 +52,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const m1Steps   = MENU_TO_M1_STEPS[menu]      ?? 0
   const m2Steps   = OILINESS_TO_M2_STEPS[oiliness] ?? 50
 
+  const menuName = MENU[menu]?.name ?? ""
   try {
     await Promise.all([
       fetch(`${API}/cooker/click`, { method: "POST" }),
@@ -65,6 +66,11 @@ export async function action({ request }: ActionFunctionArgs) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ m1: m1Steps, m2: m2Steps }),
       }),
+      fetch(`${API}/state`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state: "cooking", subtitle: menuName }),
+      }).catch(() => {}),
     ])
     return { ok: true }
   } catch (err) {
