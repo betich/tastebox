@@ -41,6 +41,7 @@ POST /cutter/stop            — stop all cutter actuators
 from flask import Flask, jsonify, request
 from bus import I2CBus
 from devices import CookerDevice, PlatingArmDevice, IngredientDevice, CutterDevice
+from display import SSD1306Display, MachineState
 
 app = Flask(__name__)
 
@@ -50,6 +51,8 @@ cooker     = CookerDevice(_bus)
 plating    = PlatingArmDevice(_bus)
 ingredient = IngredientDevice(_bus)
 cutter     = CutterDevice(_bus)
+display    = SSD1306Display()
+display.set_state(MachineState.IDLE)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -73,6 +76,21 @@ def _require_json(*fields):
     if missing:
         raise ValueError(f"Missing required fields: {missing}")
     return body
+
+
+# ── display ───────────────────────────────────────────────────────────────────
+
+@app.post("/state")
+def set_state():
+    body     = request.get_json(silent=True) or {}
+    raw      = body.get("state", "idle").upper()
+    subtitle = body.get("subtitle", "")
+    try:
+        state = MachineState[raw]
+    except KeyError:
+        return _err(f"unknown state: {raw}")
+    display.set_state(state, subtitle=subtitle)
+    return _ok(state=state.value)
 
 
 # ── global ────────────────────────────────────────────────────────────────────
