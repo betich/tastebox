@@ -83,22 +83,29 @@ def main_i2c():
 
         devices = [cooker, plater, ingredient, cutter]
         results = probe_all(devices)
+        online  = {d for d, ok in results.items() if ok}
+        offline = set(devices) - online
 
-        online = {d for d, ok in results.items() if ok}
-        if not online:
-            print("No devices found. Check wiring and I2C addresses.")
-            return
-
-        offline = {d for d, ok in results.items() if not ok}
         if offline:
             names = ", ".join(d.name for d in offline)
             print(f"[WARN] offline devices will be skipped: {names}")
 
+        # Always start the API server so the web UI can connect
         server.init(cooker, plater, ingredient, cutter, display)
         server.start()
         display.set_state(MachineState.IDLE)
 
-        demo(cooker, plater, ingredient, cutter, online)
+        if online:
+            demo(cooker, plater, ingredient, cutter, online)
+        else:
+            print("[master] no devices found — running headless (API still available)")
+
+        print("[master] serving — Ctrl-C to quit")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\n[master] shutting down")
 
 
 def main_serial(cooker_port, plater_port, ingredient_port, cutter_port):
@@ -119,12 +126,9 @@ def main_serial(cooker_port, plater_port, ingredient_port, cutter_port):
         devices = [cooker, plater, ingredient, cutter]
         results = probe_all(devices)
 
-        online = {d for d, ok in results.items() if ok}
-        if not online:
-            print("No devices found. Check serial ports and baud rate.")
-            return
+        online  = {d for d, ok in results.items() if ok}
+        offline = set(devices) - online
 
-        offline = {d for d, ok in results.items() if not ok}
         if offline:
             names = ", ".join(d.name for d in offline)
             print(f"[WARN] offline devices will be skipped: {names}")
@@ -133,7 +137,17 @@ def main_serial(cooker_port, plater_port, ingredient_port, cutter_port):
         server.start()
         display.set_state(MachineState.IDLE)
 
-        demo(cooker, plater, ingredient, cutter, online)
+        if online:
+            demo(cooker, plater, ingredient, cutter, online)
+        else:
+            print("[master] no devices found — running headless (API still available)")
+
+        print("[master] serving — Ctrl-C to quit")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\n[master] shutting down")
     finally:
         for b in buses:
             b.close()
