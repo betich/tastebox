@@ -10,6 +10,10 @@
 #define PIN_DIR   8
 #define PIN_ENA   4
 
+#define PIN_PUL2  9
+#define PIN_DIR2  10
+#define PIN_ENA2  11
+
 // Step frequency ~400 Hz → 1250 us per half-period
 #define STEP_HALF_US  1250
 
@@ -37,8 +41,8 @@ uint16_t duration_ms = 10000;
 uint16_t remain_ms   = 0;
 unsigned long start_ms = 0;
 
-void enable()  { digitalWrite(PIN_ENA, LOW); }   // active-low
-void disable() { digitalWrite(PIN_ENA, HIGH); }
+void enable()  { digitalWrite(PIN_ENA, LOW);  digitalWrite(PIN_ENA2, LOW);  }  // active-low
+void disable() { digitalWrite(PIN_ENA, HIGH); digitalWrite(PIN_ENA2, HIGH); }
 
 // ── Register access (shared by I2C and serial) ─────────────
 
@@ -119,7 +123,8 @@ void startRun(bool reverse) {
   start_ms     = millis();
   remain_ms    = duration_ms;
   i2c_status   = 0x01 | (reverse ? 0x02 : 0x00);  // busy + direction
-  digitalWrite(PIN_DIR, reverse ? LOW : HIGH);
+  digitalWrite(PIN_DIR,  reverse ? LOW : HIGH);
+  digitalWrite(PIN_DIR2, reverse ? LOW : HIGH);
   delayMicroseconds(5);
   enable();
   Serial.print(reverse ? "[CMD] retract " : "[CMD] dispense ");
@@ -135,11 +140,11 @@ void stopRun() {
 
 // ── Setup / Loop ───────────────────────────────────────────
 void setup() {
-  pinMode(PIN_PUL, OUTPUT);
-  pinMode(PIN_DIR, OUTPUT);
-  pinMode(PIN_ENA, OUTPUT);
-  digitalWrite(PIN_PUL, LOW);
-  digitalWrite(PIN_DIR, LOW);
+  pinMode(PIN_PUL,  OUTPUT); pinMode(PIN_PUL2,  OUTPUT);
+  pinMode(PIN_DIR,  OUTPUT); pinMode(PIN_DIR2,  OUTPUT);
+  pinMode(PIN_ENA,  OUTPUT); pinMode(PIN_ENA2,  OUTPUT);
+  digitalWrite(PIN_PUL,  LOW); digitalWrite(PIN_PUL2,  LOW);
+  digitalWrite(PIN_DIR,  LOW); digitalWrite(PIN_DIR2,  LOW);
   disable();
 
   Serial.begin(115200);
@@ -168,10 +173,10 @@ void loop() {
       stopRun();
     } else {
       remain_ms = (uint16_t)(duration_ms - elapsed);
-      // Pulse stepper at ~400 Hz
-      digitalWrite(PIN_PUL, HIGH);
+      // Pulse both steppers at ~400 Hz
+      digitalWrite(PIN_PUL,  HIGH); digitalWrite(PIN_PUL2,  HIGH);
       delayMicroseconds(STEP_HALF_US);
-      digitalWrite(PIN_PUL, LOW);
+      digitalWrite(PIN_PUL,  LOW);  digitalWrite(PIN_PUL2,  LOW);
       delayMicroseconds(STEP_HALF_US);
     }
   }
