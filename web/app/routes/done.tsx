@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router"
 import { MENU } from "../types"
 import { setDisplayState } from "../lib/controller.server"
+import { useGamepadInput } from "../lib/useGamepad"
 
 export async function loader() {
   await setDisplayState("finished")
@@ -22,6 +23,8 @@ export default function Done() {
 
   const [secs, setSecs] = useState(CLOSE_SECS)
   const [pressing, setPressing] = useState(false)
+
+  useGamepadInput((btn) => { if (btn === 0) navigate("/") })
 
   useEffect(() => {
     if (secs <= 0) { navigate("/"); return }

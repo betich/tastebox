@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useFetcher, useNavigate } from "react-router"
 import type { ActionFunctionArgs } from "react-router"
+import { useGamepadInput } from "../lib/useGamepad"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -480,6 +481,31 @@ export default function Admin() {
     if (device === "plating") send("arm_dur", v * 50)
   }, [device, send])
 
+  // Physical gamepad support
+  // D-pad: 12=↑ 13=↓ 14=← 15=→  |  Face: 0=A 1=B 2=X 3=Y  |  L3=10 R3=11
+  const gpConnected = useGamepadInput(
+    (btn) => {
+      if (btn === 12) handleDpad("up")
+      if (btn === 13) handleDpad("down")
+      if (btn === 14) handleDpad("left")
+      if (btn === 15) handleDpad("right")
+      if (btn === 0)  handleFace("a")
+      if (btn === 1)  handleFace("b")
+      if (btn === 2)  handleFace("x")
+      if (btn === 3)  handleFace("y")
+      if (btn === 10) handleLCommit(lVal)   // L3 → commit left stick
+      if (btn === 11) handleRCommit(rVal)   // R3 → commit right stick
+    },
+    (axes) => {
+      // Left stick Y (axis 1): -1=up → 100, +1=down → 0
+      const ly = axes[1]
+      if (ly !== 0) setLVal(Math.round(50 - ly * 50))
+      // Right stick Y (axis 3)
+      const ry = axes[3]
+      if (ry !== 0) setRVal(Math.round(50 - ry * 50))
+    },
+  )
+
   const DEVICES: Device[] = ["cooker", "plating", "ingredient", "cutter"]
 
   return (
@@ -497,9 +523,15 @@ export default function Admin() {
             </button>
             <h1 className="text-[60px] font-black tracking-tight">ADMIN DEBUG</h1>
           </div>
-          <div className="flex items-center gap-3">
-            <div className={`w-4 h-4 rounded-full ${statusData?.ok ? "bg-green-400" : "bg-red-400"}`} />
-            <span className="text-[24px] text-neutral-500">{statusData?.ok ? "online" : "offline"}</span>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <div className={`w-3 h-3 rounded-full ${gpConnected ? "bg-blue-400" : "bg-neutral-400"}`} />
+              <span className="text-[20px] text-neutral-500">{gpConnected ? "gamepad" : "no gamepad"}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className={`w-4 h-4 rounded-full ${statusData?.ok ? "bg-green-400" : "bg-red-400"}`} />
+              <span className="text-[24px] text-neutral-500">{statusData?.ok ? "online" : "offline"}</span>
+            </div>
           </div>
         </div>
 

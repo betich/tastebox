@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useNavigate, useSearchParams } from "react-router"
 import DiscreteBar from "../components/DiscreteBar"
+import { useGamepadInput } from "../lib/useGamepad"
 
 export function meta() {
   return [{ title: "Tastebox — Personalize" }]
@@ -14,6 +15,16 @@ export default function Personalize() {
   const [umami,    setUmami]    = useState(2)
   const [oiliness, setOiliness] = useState(3)
   const [pressing, setPressing]  = useState(false)
+
+  const MAX = 4  // SEGMENT_LABELS.length - 1
+
+  useGamepadInput((btn) => {
+    if (btn === 14) setUmami(u => Math.max(0, u - 1))    // D-pad left  → umami −1
+    if (btn === 15) setUmami(u => Math.min(MAX, u + 1))  // D-pad right → umami +1
+    if (btn === 12) setOiliness(o => Math.min(MAX, o + 1)) // D-pad up   → oiliness +1
+    if (btn === 13) setOiliness(o => Math.max(0, o - 1))   // D-pad down → oiliness −1
+    if (btn === 0)  handleNext()
+  })
 
   function handleNext() {
     navigate(`/cooking?menu=${menu}&umami=${umami}&oiliness=${oiliness}`)

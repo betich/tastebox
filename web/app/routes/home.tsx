@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { MENU } from "../types";
 import { setDisplayState } from "../lib/controller.server"
+import { useGamepadInput } from "../lib/useGamepad"
 
 export async function loader() {
   await setDisplayState("idle")
@@ -22,8 +23,23 @@ export default function Home() {
   const [dragOffset, setDragOffset] = useState(0);
   const [snapping, setSnapping] = useState(false);
 
-  const startX  = useRef(0);
-  const didDrag = useRef(false);
+  const startX      = useRef(0);
+  const didDrag     = useRef(false);
+  const axisLatched = useRef(false);
+
+  useGamepadInput(
+    (btn) => {
+      if (btn === 14) advance(-1)
+      if (btn === 15) advance(1)
+      if (btn === 0)  navigate(`/personalize?menu=${index}`)
+    },
+    (axes) => {
+      const x = axes[0]
+      if (x < -0.5 && !axisLatched.current) { axisLatched.current = true; advance(-1) }
+      else if (x > 0.5 && !axisLatched.current) { axisLatched.current = true; advance(1) }
+      else if (x === 0) axisLatched.current = false
+    },
+  );
 
   const prev = (index - 1 + MENU.length) % MENU.length;
   const next = (index + 1) % MENU.length;
