@@ -70,7 +70,7 @@ Motor motorA = { IDLE, 0, 0 };
 Motor motorB = { IDLE, 0, 0 };
 
 volatile uint8_t  pending_cmd    = 0;
-volatile uint16_t set_steps_rev  = 200;   // tweak until one vend = one revolution
+volatile uint16_t set_steps_rev  = 1600;  // 1/8 microstepping — tweak until one vend = one revolution
 volatile uint8_t  selected_reg   = 0;
 
 // ── Motor helpers ──────────────────────────────────────────
@@ -80,8 +80,7 @@ void enableB()  { digitalWrite(B_ENA, LOW); }
 void disableB() { digitalWrite(B_ENA, HIGH); }
 
 void setDirA(bool bwd) {
-  // A dir is inverted relative to B
-  digitalWrite(A_DIR, bwd ? HIGH : LOW);
+  digitalWrite(A_DIR, bwd ? LOW : HIGH);
 }
 void setDirB(bool bwd) {
   digitalWrite(B_DIR, bwd ? LOW : HIGH);
