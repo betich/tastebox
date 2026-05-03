@@ -166,7 +166,10 @@ export default function Home() {
           Tap center to select
         </p>
 
-        <span className="text-[72px] font-black uppercase tracking-[4px]">
+        <span
+          className="text-[72px] font-black uppercase tracking-[4px] cursor-pointer select-none active:opacity-50"
+          onClick={() => navigate("/admin")}
+        >
           TASTEBOX
         </span>
       </div>

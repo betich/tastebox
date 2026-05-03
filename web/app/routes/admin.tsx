@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useFetcher } from "react-router"
+import { useFetcher, useNavigate } from "react-router"
 import type { ActionFunctionArgs } from "react-router"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -357,6 +357,7 @@ export default function Admin() {
   const [lVal, setLVal] = useState(50)
   const [rVal, setRVal] = useState(50)
 
+  const navigate      = useNavigate()
   const cmdFetcher    = useFetcher()
   const statusFetcher = useFetcher<typeof loader>()
 
@@ -481,7 +482,15 @@ export default function Admin() {
 
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-[60px] font-black tracking-tight">ADMIN DEBUG</h1>
+          <div className="flex items-center gap-6">
+            <button
+              onClick={() => navigate("/")}
+              className="text-[28px] text-neutral-400 active:text-neutral-600 select-none"
+            >
+              ← Back
+            </button>
+            <h1 className="text-[60px] font-black tracking-tight">ADMIN DEBUG</h1>
+          </div>
           <div className="flex items-center gap-3">
             <div className={`w-4 h-4 rounded-full ${statusData?.ok ? "bg-green-400" : "bg-red-400"}`} />
             <span className="text-[24px] text-neutral-500">{statusData?.ok ? "online" : "offline"}</span>
