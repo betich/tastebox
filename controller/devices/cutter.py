@@ -1,4 +1,4 @@
-from ..bus import I2CBus
+from bus import I2CBus
 from .base import I2CDevice
 
 # Register map — mirrors cutter/src/main.cpp (I2C slave at 0x45)

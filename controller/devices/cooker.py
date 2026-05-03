@@ -1,4 +1,4 @@
-from ..bus import I2CBus
+from bus import I2CBus
 from .base import I2CDevice
 
 # Register map — mirrors cooker_controler.ino

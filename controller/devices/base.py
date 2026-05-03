@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from ..bus import I2CBus
+from bus import I2CBus
 
 
 class I2CDevice(ABC):
