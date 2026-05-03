@@ -9,53 +9,68 @@ from display import ST7735Display, MachineState
 
 def probe_all(devices):
     print("\n── Device scan ──────────────────────────")
+    results = {}
     for dev in devices:
-        state = "OK" if dev.ping() else "NOT FOUND"
+        ok = dev.ping()
+        results[dev] = ok
+        state = "OK" if ok else "NOT FOUND"
         print(f"  {dev.name:<16} 0x{dev.address:02X}  [{state}]")
     print("─────────────────────────────────────────\n")
+    return results
 
 
 def demo(cooker: CookerDevice, plater: PlatingArmDevice,
-         ingredient: IngredientDevice, cutter: CutterDevice):
-    print("[demo] cooker status:     ", cooker.status())
-    print("[demo] plater status:     ", plater.status())
-    print("[demo] ingredient status: ", ingredient.status())
-    print("[demo] cutter status:     ", cutter.status())
+         ingredient: IngredientDevice, cutter: CutterDevice, online: set):
+    c_ok = cooker     in online
+    p_ok = plater     in online
+    i_ok = ingredient in online
+    x_ok = cutter     in online
 
-    print("\n[demo] clicking cooker power...")
-    cooker.click()
-    time.sleep(0.5)
+    print("[demo] cooker status:     ", cooker.status()     if c_ok else "OFFLINE — skipped")
+    print("[demo] plater status:     ", plater.status()     if p_ok else "OFFLINE — skipped")
+    print("[demo] ingredient status: ", ingredient.status() if i_ok else "OFFLINE — skipped")
+    print("[demo] cutter status:     ", cutter.status()     if x_ok else "OFFLINE — skipped")
 
-    print("[demo] moving cooker to position 3...")
-    cooker.set_position(3)
-    time.sleep(0.5)
+    if c_ok:
+        print("\n[demo] clicking cooker power...")
+        cooker.click()
+        time.sleep(0.5)
+        print("[demo] moving cooker to position 3...")
+        cooker.set_position(3)
+        time.sleep(0.5)
 
-    print("[demo] moving pan stepper +10 steps...")
-    plater.move_pan(10)
-    time.sleep(0.5)
+    if p_ok:
+        print("[demo] moving pan stepper +10 steps...")
+        plater.move_pan(10)
+        time.sleep(0.5)
+        print("[demo] moving arm to position B...")
+        plater.goto_b()
+        time.sleep(0.5)
 
-    print("[demo] moving arm to position B...")
-    plater.goto_b()
-    time.sleep(0.5)
+    if i_ok:
+        print("[demo] dispensing ingredient (default duration)...")
+        ingredient.dispense()
+        time.sleep(0.5)
 
-    print("[demo] dispensing ingredient (default duration)...")
-    ingredient.dispense()
-    time.sleep(0.5)
+    if x_ok:
+        print("[demo] opening lid...")
+        cutter.open_lid()
+        time.sleep(0.5)
 
-    print("[demo] opening lid...")
-    cutter.open_lid()
-    time.sleep(0.5)
-
-    print("[demo] homing arm to position A...")
-    plater.goto_a()
-    print("[demo] homing plater pan...")
-    plater.home_pan()
-    print("[demo] resetting cooker position...")
-    cooker.reset()
-    print("[demo] stopping ingredient...")
-    ingredient.stop()
-    print("[demo] closing lid...")
-    cutter.close_lid()
+    if p_ok:
+        print("[demo] homing arm to position A...")
+        plater.goto_a()
+        print("[demo] homing plater pan...")
+        plater.home_pan()
+    if c_ok:
+        print("[demo] resetting cooker position...")
+        cooker.reset()
+    if i_ok:
+        print("[demo] stopping ingredient...")
+        ingredient.stop()
+    if x_ok:
+        print("[demo] closing lid...")
+        cutter.close_lid()
 
 
 def main_i2c():
@@ -67,18 +82,23 @@ def main_i2c():
         cutter     = CutterDevice(bus)
 
         devices = [cooker, plater, ingredient, cutter]
-        probe_all(devices)
+        results = probe_all(devices)
 
-        online = [d for d in devices if d.ping()]
+        online = {d for d, ok in results.items() if ok}
         if not online:
             print("No devices found. Check wiring and I2C addresses.")
             return
+
+        offline = {d for d, ok in results.items() if not ok}
+        if offline:
+            names = ", ".join(d.name for d in offline)
+            print(f"[WARN] offline devices will be skipped: {names}")
 
         server.init(cooker, plater, ingredient, cutter, display)
         server.start()
         display.set_state(MachineState.IDLE)
 
-        demo(cooker, plater, ingredient, cutter)
+        demo(cooker, plater, ingredient, cutter, online)
 
 
 def main_serial(cooker_port, plater_port, ingredient_port, cutter_port):
@@ -97,18 +117,23 @@ def main_serial(cooker_port, plater_port, ingredient_port, cutter_port):
         cutter     = CutterDevice(buses[3])
 
         devices = [cooker, plater, ingredient, cutter]
-        probe_all(devices)
+        results = probe_all(devices)
 
-        online = [d for d in devices if d.ping()]
+        online = {d for d, ok in results.items() if ok}
         if not online:
             print("No devices found. Check serial ports and baud rate.")
             return
+
+        offline = {d for d, ok in results.items() if not ok}
+        if offline:
+            names = ", ".join(d.name for d in offline)
+            print(f"[WARN] offline devices will be skipped: {names}")
 
         server.init(cooker, plater, ingredient, cutter, display)
         server.start()
         display.set_state(MachineState.IDLE)
 
-        demo(cooker, plater, ingredient, cutter)
+        demo(cooker, plater, ingredient, cutter, online)
     finally:
         for b in buses:
             b.close()
