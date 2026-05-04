@@ -113,8 +113,33 @@ void onRequest() {
   Wire.write(processRead(selectedReg));
 }
 
+// ── Serial help ──────────────────────────────────────────────
+
+void printHelp() {
+  Serial.println("── cooker node (0x42) ───────────────────");
+  Serial.println("Pins: ENC_E D2 / ENC_D D3 / ENC_C D4");
+  Serial.println("      BUZ D5 (input) / BEEP D8 (output)");
+  Serial.println("-----------------------------------------");
+  Serial.println("Commands (W 10 <cmd>):");
+  Serial.println("  01  RESET    — zero position + beep");
+  Serial.println("  04  CLICK    — trigger encoder click");
+  Serial.println("Set position: W 11 HH LL  (int16 steps)");
+  Serial.println("  W 11 00 01  →   +1 step  (CW)");
+  Serial.println("  W 11 FF FF  →   -1 step  (CCW)");
+  Serial.println("  W 11 00 04  →   +4 steps");
+  Serial.println("  W 11 FF FC  →   -4 steps");
+  Serial.println("-----------------------------------------");
+  Serial.println("Read:");
+  Serial.println("  R 00  pos hi");
+  Serial.println("  R 01  pos lo");
+  Serial.println("  R 02  switch (0=off 1=on)");
+  Serial.println("  R 03  events (bit0=CW bit1=CCW bit2=CLICK, clears on read)");
+  Serial.print(  "Pos now: "); Serial.println(currentPos);
+  Serial.println("-----------------------------------------");
+}
+
 // ── Serial handler ───────────────────────────────────────────
-// Protocol: "R HH\n" → "!HH\n"  |  "W HH DD...\n" → "!OK\n"
+// Protocol: "R HH\n" → "!HH\n"  |  "W HH DD...\n" → "!OK\n"  |  "help\n"
 
 void handleSerial() {
   static char buf[48];
@@ -125,7 +150,9 @@ void handleSerial() {
       if (idx > 0) {
         buf[idx] = '\0';
         idx = 0;
-        if (buf[0] == 'R' && buf[1] == ' ') {
+        if (strncmp(buf, "help", 4) == 0) {
+          printHelp();
+        } else if (buf[0] == 'R' && buf[1] == ' ') {
           uint8_t reg = (uint8_t)strtoul(buf + 2, nullptr, 16);
           uint8_t val = processRead(reg);
           Serial.print('!');
@@ -142,6 +169,8 @@ void handleSerial() {
           }
           processWrite(reg, data, len);
           Serial.println("!OK");
+        } else {
+          Serial.println("?  (type 'help')");
         }
       }
     } else if (idx < (uint8_t)sizeof(buf) - 1) {
@@ -171,7 +200,7 @@ void setup() {
   Wire.onRequest(onRequest);
 
   beep();
-  Serial.println("[SYSTEM] ready (I2C 0x42 | serial 115200)");
+  Serial.println("[cooker] ready — type 'help'");
 }
 
 void loop() {

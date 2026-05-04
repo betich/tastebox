@@ -137,23 +137,33 @@ void onRequest() { Wire.write(processRead(selected_reg)); }
 // ── Serial ─────────────────────────────────────────────────
 void printHelp() {
   Serial.println("── ingredient node (0x44) ───────────────");
+  Serial.println("Stepper A: PUL D2 / DIR D3 / ENA D4");
+  Serial.println("Stepper B: PUL D13 / DIR D12 / ENA D11");
+  Serial.println("-----------------------------------------");
   Serial.println("Commands (W 10 <cmd>):");
   Serial.println("  01  STOP_ALL");
-  Serial.println("  02  A fwd continuous");
-  Serial.println("  03  A bwd continuous");
-  Serial.println("  04  A dispense (1 rev fwd)");
-  Serial.println("  05  A retract  (1 rev bwd)");
-  Serial.println("  06  B fwd continuous");
-  Serial.println("  07  B bwd continuous");
-  Serial.println("  08  B dispense (1 rev fwd)");
-  Serial.println("  09  B retract  (1 rev bwd)");
+  Serial.println("  02  A FWD_CONT   — non-stop forward");
+  Serial.println("  03  A BWD_CONT   — non-stop backward");
+  Serial.println("  04  A DISPENSE   — 1 rev backward");
+  Serial.println("  05  A RETRACT    — 1 rev forward");
+  Serial.println("  06  B FWD_CONT   — non-stop forward");
+  Serial.println("  07  B BWD_CONT   — non-stop backward");
+  Serial.println("  08  B DISPENSE   — 1 rev backward");
+  Serial.println("  09  B RETRACT    — 1 rev forward");
   Serial.println("  0A  STOP_A");
   Serial.println("  0B  STOP_B");
-  Serial.println("Set revs: W 11 HH LL  (steps/rev uint16, default 200)");
-  Serial.println("Read:  R 00=statusA  R 01=statusB");
-  Serial.println("Pins:  A=D2/D3/D4   B=D13/D12/D11");
+  Serial.println("-----------------------------------------");
+  Serial.println("Steps/rev: W 11 HH LL  (uint16)");
+  Serial.println("  W 11 00 C8  →  200 steps (full step)");
+  Serial.println("  W 11 01 90  →  400 steps (1/2 step)");
+  Serial.println("  W 11 03 20  →  800 steps (1/4 step)");
+  Serial.println("  W 11 06 40  → 1600 steps (1/8 step)  ← default");
+  Serial.println("-----------------------------------------");
+  Serial.println("Read:");
+  Serial.println("  R 00  status A  (bit0=busy bit1=bwd)");
+  Serial.println("  R 01  status B  (bit0=busy bit1=bwd)");
   Serial.print(  "Steps/rev now: "); Serial.println(set_steps_rev);
-  Serial.println("─────────────────────────────────────────");
+  Serial.println("-----------------------------------------");
 }
 
 void handleSerial() {
@@ -217,11 +227,11 @@ void handleCommand(uint8_t cmd) {
       Serial.println("[CMD] A bwd cont");
       break;
     case CMD_A_DISPENSE:
-      startMotor(motorA, false, REVOLUTION, enableA, setDirA);
+      startMotor(motorA, true,  REVOLUTION, enableA, setDirA);
       Serial.print("[CMD] A dispense "); Serial.print(set_steps_rev); Serial.println(" steps");
       break;
     case CMD_A_RETRACT:
-      startMotor(motorA, true,  REVOLUTION, enableA, setDirA);
+      startMotor(motorA, false, REVOLUTION, enableA, setDirA);
       Serial.print("[CMD] A retract "); Serial.print(set_steps_rev); Serial.println(" steps");
       break;
     case CMD_B_FWD_CONT:
@@ -233,11 +243,11 @@ void handleCommand(uint8_t cmd) {
       Serial.println("[CMD] B bwd cont");
       break;
     case CMD_B_DISPENSE:
-      startMotor(motorB, false, REVOLUTION, enableB, setDirB);
+      startMotor(motorB, true,  REVOLUTION, enableB, setDirB);
       Serial.print("[CMD] B dispense "); Serial.print(set_steps_rev); Serial.println(" steps");
       break;
     case CMD_B_RETRACT:
-      startMotor(motorB, true,  REVOLUTION, enableB, setDirB);
+      startMotor(motorB, false, REVOLUTION, enableB, setDirB);
       Serial.print("[CMD] B retract "); Serial.print(set_steps_rev); Serial.println(" steps");
       break;
   }

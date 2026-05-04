@@ -105,8 +105,41 @@ void onRequest() {
   Wire.write(processRead(selected_reg));
 }
 
+// ── Serial help ─────────────────────────────────────────────
+
+void printHelp() {
+  Serial.println("── cutter node (0x45) ───────────────────");
+  Serial.println("Lid motor: D3  |  Piston1: D5  |  Piston2: D7");
+  Serial.println("Servo1: D9     |  Servo2: D11");
+  Serial.println("-----------------------------------------");
+  Serial.println("Commands (W 10 <cmd>):");
+  Serial.println("  01  STOP_ALL");
+  Serial.println("  02  OPEN_LID    — run for lid_dur ms");
+  Serial.println("  03  CLOSE_LID   — run for lid_dur ms");
+  Serial.println("  04  PISTON1_EXT — extend for pst_dur ms");
+  Serial.println("  05  PISTON1_RET — retract for pst_dur ms");
+  Serial.println("  06  PISTON2_EXT — extend for pst_dur ms");
+  Serial.println("  07  PISTON2_RET — retract for pst_dur ms");
+  Serial.println("-----------------------------------------");
+  Serial.println("Servo angle: W 11 AA  (servo1, 0-180)");
+  Serial.println("             W 12 AA  (servo2, 0-180)");
+  Serial.println("  e.g. W 11 5A  → servo1 to 90°");
+  Serial.println("Lid dur:    W 13 HH LL  (ms uint16)");
+  Serial.println("Piston dur: W 15 HH LL  (ms uint16)");
+  Serial.println("  W 13 01 F4  →  500 ms");
+  Serial.println("  W 13 03 E8  → 1000 ms (1 sec)  ← default");
+  Serial.println("  W 13 07 D0  → 2000 ms (2 sec)");
+  Serial.println("  W 13 0F A0  → 4000 ms (4 sec)");
+  Serial.println("-----------------------------------------");
+  Serial.println("Read:");
+  Serial.println("  R 00  status (bit0=lid_busy bit1=p1_busy bit2=p2_busy)");
+  Serial.print(  "Lid dur now: "); Serial.print(lid_dur); Serial.println(" ms");
+  Serial.print(  "Pst dur now: "); Serial.print(pst_dur); Serial.println(" ms");
+  Serial.println("-----------------------------------------");
+}
+
 // ── Serial handler ─────────────────────────────────────────
-// Protocol: "R HH\n" → "!HH\n"  |  "W HH DD...\n" → "!OK\n"
+// Protocol: "R HH\n" → "!HH\n"  |  "W HH DD...\n" → "!OK\n"  |  "help\n"
 
 void handleSerial() {
   static char buf[48];
@@ -117,7 +150,9 @@ void handleSerial() {
       if (idx > 0) {
         buf[idx] = '\0';
         idx = 0;
-        if (buf[0] == 'R' && buf[1] == ' ') {
+        if (strncmp(buf, "help", 4) == 0) {
+          printHelp();
+        } else if (buf[0] == 'R' && buf[1] == ' ') {
           uint8_t reg = (uint8_t)strtoul(buf + 2, nullptr, 16);
           uint8_t val = processRead(reg);
           Serial.print('!');
@@ -134,6 +169,8 @@ void handleSerial() {
           }
           processWrite(reg, data, len);
           Serial.println("!OK");
+        } else {
+          Serial.println("?  (type 'help')");
         }
       }
     } else if (idx < (uint8_t)sizeof(buf) - 1) {
@@ -160,7 +197,7 @@ void setup() {
   Wire.begin(I2C_ADDRESS);
   Wire.onReceive(onReceive);
   Wire.onRequest(onRequest);
-  Serial.println("[cutter] ready (I2C 0x45 | serial 115200)");
+  Serial.println("[cutter] ready — type 'help'");
 }
 
 void loop() {

@@ -10,7 +10,7 @@ type Device = "cooker" | "plating" | "ingredient" | "cutter"
 interface StatusData {
   ok: boolean
   cooker?:     { online: boolean; on: boolean; position: number }
-  plating?:    { online: boolean; m1_busy: boolean; m2_busy: boolean; m1_pos: number; arm: number }
+  plating?:    { online: boolean; m1_busy: boolean; m2_busy: boolean; m1_pos: number; arm: number; lid: number; lid_busy: boolean }
   ingredient?: { online: boolean; busy: boolean; remaining_ms: number }
   cutter?:     { online: boolean; lid_busy: boolean; piston1_busy: boolean; piston2_busy: boolean }
 }
@@ -50,12 +50,20 @@ export async function action({ request }: ActionFunctionArgs) {
       if (command === "position_delta") await post("/cooker/position", { delta: value })
       if (command === "set_position")   await post("/cooker/position", { position: Math.round(value) })
     } else if (device === "plating") {
-      if (command === "goto_a")      await post("/plating/arm",  { action: "goto_a" })
-      if (command === "goto_b")      await post("/plating/arm",  { action: "goto_b" })
+      if (command === "dispense")    await post("/plating/arm",  { action: "dispense" })
+      if (command === "retract")     await post("/plating/arm",  { action: "retract" })
+      if (command === "fwd_cont")    await post("/plating/arm",  { action: "fwd_cont" })
+      if (command === "bwd_cont")    await post("/plating/arm",  { action: "bwd_cont" })
       if (command === "home_pan")    await post("/plating/home")
       if (command === "stop_arm")    await post("/plating/arm",  { action: "stop" })
       if (command === "move_pan")    await post("/plating/move", { m1: Math.round(value), m2: 0 })
-      if (command === "arm_dur")     await post("/plating/arm",  { action: "goto_b", duration_ms: Math.round(value) })
+      if (command === "arm_dur")     await post("/plating/arm",  { duration_ms: Math.round(value), action: "stop" })
+      if (command === "lid_open")    await post("/plating/lid",  { action: "open" })
+      if (command === "lid_close")   await post("/plating/lid",  { action: "close" })
+      if (command === "lid_fwd")     await post("/plating/lid",  { action: "fwd_cont" })
+      if (command === "lid_bwd")     await post("/plating/lid",  { action: "bwd_cont" })
+      if (command === "stop_lid")    await post("/plating/lid",  { action: "stop" })
+      if (command === "lid_dur")     await post("/plating/lid",  { duration_ms: Math.round(value), action: "stop" })
     } else if (device === "ingredient") {
       if (command === "a_fwd")      await post("/ingredient/a/fwd")
       if (command === "a_bwd")      await post("/ingredient/a/bwd")
@@ -279,10 +287,12 @@ function StatusRow({ status, device }: { status: StatusData | null; device: Devi
   }
   if (device === "plating") {
     const d = data as NonNullable<StatusData["plating"]>
+    const LID_LABELS = ["closed", "open", "moving"]
     return (
       <div className="flex gap-6 text-[18px] text-neutral-300 font-mono">
-        <span>pan <strong className="text-white">{d.m1_pos}</strong>{d.m1_busy && " (moving)"}</span>
-        <span>arm <strong className="text-white">{ARM_LABELS[d.arm] ?? d.arm}</strong>{d.m2_busy && " (moving)"}</span>
+        <span>pan <strong className="text-white">{d.m1_pos}</strong>{d.m1_busy && " (busy)"}</span>
+        <span>arm <strong className="text-white">{ARM_LABELS[d.arm] ?? d.arm}</strong>{d.m2_busy && " (busy)"}</span>
+        <span>lid <strong className="text-white">{LID_LABELS[d.lid] ?? d.lid}</strong>{d.lid_busy && " (busy)"}</span>
       </div>
     )
   }
@@ -344,7 +354,7 @@ function DeviceStatusGrid({ status }: { status: StatusData | null }) {
       <DeviceCard id="cooker"     addr="0x42" ctrlOnline={ctrlOnline} detected={c?.online ?? false}
         detail={c?.online ? `pos ${c.position} · ${c.on ? "ON" : "off"}` : undefined} />
       <DeviceCard id="plating"    addr="0x43" ctrlOnline={ctrlOnline} detected={p?.online ?? false}
-        detail={p?.online ? `pan ${p.m1_pos} · arm ${ARM_LABELS[p.arm] ?? p.arm}` : undefined} />
+        detail={p?.online ? `pan ${p.m1_pos} · arm ${ARM_LABELS[p.arm] ?? p.arm} · lid ${["closed","open","moving"][p.lid] ?? p.lid}` : undefined} />
       <DeviceCard id="ingredient" addr="0x44" ctrlOnline={ctrlOnline} detected={i?.online ?? false}
         detail={i?.online ? `${i.busy ? "busy" : "idle"} · ${i.remaining_ms}ms rem` : undefined} />
       <DeviceCard id="cutter"     addr="0x45" ctrlOnline={ctrlOnline} detected={x?.online ?? false}
@@ -358,10 +368,10 @@ function DeviceStatusGrid({ status }: { status: StatusData | null }) {
 type BtnMap = { a: string | null; b: string | null; x: string | null; y: string | null }
 
 const FACE_LABELS: Record<Device, BtnMap> = {
-  cooker:     { a: "Click",    b: "Reset",    x: null,       y: null       },
-  plating:    { a: "Goto A",   b: "Goto B",   x: "Home Pan", y: "Stop Arm" },
-  ingredient: { a: "A Dispense", b: "B Dispense", x: "Stop A", y: "Stop B" },
-  cutter:     { a: "Open Lid", b: "Close Lid", x: "P2 Ext",  y: "P2 Ret"  },
+  cooker:     { a: "Click",     b: "Reset",     x: null,        y: null        },
+  plating:    { a: "Arm Disp",  b: "Arm Ret",   x: "Lid Open",  y: "Lid Close" },
+  ingredient: { a: "A Dispense", b: "B Dispense", x: "Stop A",  y: "Stop B"   },
+  cutter:     { a: "Open Lid",  b: "Close Lid", x: "P2 Ext",   y: "P2 Ret"   },
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -400,10 +410,10 @@ export default function Admin() {
         right: () => {},
       },
       plating: {
-        up:    () => send("move_pan", +5),
-        down:  () => send("move_pan", -5),
-        left:  () => send("move_pan", -15),
-        right: () => send("move_pan", +15),
+        up:    () => send("fwd_cont"),
+        down:  () => send("bwd_cont"),
+        left:  () => send("lid_bwd"),
+        right: () => send("lid_fwd"),
       },
       ingredient: {
         up:    () => send("a_fwd"),
@@ -430,10 +440,10 @@ export default function Admin() {
         y: () => {},
       },
       plating: {
-        a: () => send("goto_a"),
-        b: () => send("goto_b"),
-        x: () => send("home_pan"),
-        y: () => send("stop_arm"),
+        a: () => send("dispense"),
+        b: () => send("retract"),
+        x: () => send("lid_open"),
+        y: () => send("lid_close"),
       },
       ingredient: {
         a: () => send("a_dispense"),  // A one revolution
@@ -459,7 +469,7 @@ export default function Admin() {
   }
   const rStickLabel: Record<Device, string> = {
     cooker:     "—",
-    plating:    "Arm Dur ×50ms",
+    plating:    "Lid Dur ×50ms",
     ingredient: "—",
     cutter:     "Piston Dur ×20ms",
   }
@@ -471,13 +481,13 @@ export default function Admin() {
   }
   const rStickDesc: Record<Device, string> = {
     cooker:     "Not used",
-    plating:    "Release → set arm travel duration",
+    plating:    "Release → set lid duration (no move)",
     ingredient: "Not used",
     cutter:     "Not used",
   }
   const DPAD_LABELS: Record<Device, Partial<Record<"up"|"down"|"left"|"right", string>>> = {
     cooker:     { up: "+1 pos", down: "−1 pos", left: "home" },
-    plating:    { up: "+5 pan", down: "−5 pan", left: "−15 pan", right: "+15 pan" },
+    plating:    { up: "arm fwd", down: "arm bwd", left: "lid bwd", right: "lid fwd" },
     ingredient: { up: "A fwd", down: "A bwd", left: "B fwd", right: "B bwd" },
     cutter:     { up: "P1 ext", down: "P1 ret", left: "P2 ret", right: "P2 ext" },
   }
@@ -488,7 +498,7 @@ export default function Admin() {
     if (device === "ingredient") send("set_rev", Math.round(v / 100 * 400))  // 0–400 steps
   }, [device, send])
   const handleRCommit = useCallback((v: number) => {
-    if (device === "plating") send("arm_dur", v * 50)
+    if (device === "plating") send("lid_dur", v * 50)
   }, [device, send])
 
   // Physical gamepad support

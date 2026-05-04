@@ -82,14 +82,15 @@ def status():
                 "on":       _cooker.is_on()       if cooker_ok else False,
                 "position": _cooker.get_position() if cooker_ok else 0,
             }
-            # m1/m2 naming kept for cooking.tsx compatibility
             plater_data = {
-                "online":   plater_ok,
-                "m1_busy":  _plater.is_pan_busy()      if plater_ok else False,
-                "m2_busy":  _plater.is_arm_busy()      if plater_ok else False,
-                "m1_pos":   _plater.get_pan_position() if plater_ok else 0,
-                "m2_pos":   0,
-                "arm":      _plater.get_arm_state()    if plater_ok else 0,
+                "online":    plater_ok,
+                "m1_busy":   _plater.is_pan_busy()      if plater_ok else False,
+                "m2_busy":   _plater.is_arm_busy()      if plater_ok else False,
+                "m1_pos":    _plater.get_pan_position() if plater_ok else 0,
+                "m2_pos":    0,
+                "arm":       _plater.get_arm_state()    if plater_ok else 0,
+                "lid":       _plater.get_lid_state()    if plater_ok else 0,
+                "lid_busy":  _plater.is_lid_busy()      if plater_ok else False,
             }
             ing_data = {
                 "online":       ing_ok,
@@ -167,9 +168,8 @@ def plating_move():
             if m1 != 0:
                 _plater.move_pan(m1)
             if m2 > 0:
-                # m2 treated as oiliness steps → arm duration ms (50 ms per step)
                 _plater.set_arm_duration(m2 * 50)
-                _plater.goto_b()
+                _plater.dispense()
     return _safe(_do)
 
 
@@ -187,12 +187,28 @@ def plating_arm():
         with _lock:
             if dur is not None:
                 _plater.set_arm_duration(int(dur))
-            if action == "goto_a":
-                _plater.goto_a()
-            elif action == "goto_b":
-                _plater.goto_b()
-            else:
-                _plater.stop_arm()
+            if   action == "dispense":  _plater.dispense()
+            elif action == "retract":   _plater.retract()
+            elif action == "fwd_cont":  _plater.fwd_cont()
+            elif action == "bwd_cont":  _plater.bwd_cont()
+            else:                       _plater.stop_arm()
+    return _safe(_do)
+
+
+@app.route("/plating/lid", methods=["POST"])
+def plating_lid():
+    data   = request.get_json() or {}
+    action = data.get("action", "stop")
+    dur    = data.get("duration_ms")
+    def _do():
+        with _lock:
+            if dur is not None:
+                _plater.set_lid_duration(int(dur))
+            if   action == "open":      _plater.open_lid()
+            elif action == "close":     _plater.close_lid()
+            elif action == "fwd_cont":  _plater.lid_fwd_cont()
+            elif action == "bwd_cont":  _plater.lid_bwd_cont()
+            else:                       _plater.stop_lid()
     return _safe(_do)
 
 
