@@ -31,13 +31,15 @@ try:
         time.sleep(len(data) * 10 / BAUD + 0.002)
         GPIO.output(PIN_DE, GPIO.LOW)    # release bus
 
-        echo = ser.readline().decode(errors="replace")
-        if echo.strip() == msg.strip():
+        echo = ser.read(len(data)).decode(errors="replace")
+        if echo == msg:
             print(f"[OK]  '{msg.strip()}' echoed — TX chain works")
         elif echo:
             print(f"[ERR] sent '{msg.strip()}' got '{echo.strip()}'")
         else:
             print(f"[TMO] no echo — check MAX485 wiring / DE pin / UART TX")
+
+        ser.reset_input_buffer()
         time.sleep(0.5)
 finally:
     GPIO.cleanup()
