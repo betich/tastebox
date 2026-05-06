@@ -31,11 +31,12 @@ def _tx_enable(enabled: bool):
 
 def _send(ser: serial.Serial, message: str):
     _tx_enable(True)
-    ser.write(message.encode())
+    data = message.encode()
+    ser.write(data)
     ser.flush()
-    # Wait for last byte to leave the shift register before releasing the bus.
-    # At 9600 baud, one byte ≈ 1.04 ms; a small margin is enough.
-    time.sleep(0.002)
+    # Hold DE/RE until all bytes have left the UART shift register.
+    # 10 bits per byte (start + 8 data + stop) at BAUD + 2 ms margin.
+    time.sleep(len(data) * 10 / BAUD + 0.002)
     _tx_enable(False)
 
 

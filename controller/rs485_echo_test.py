@@ -23,9 +23,12 @@ try:
         ser.reset_input_buffer()
 
         GPIO.output(PIN_DE, GPIO.HIGH)   # enable driver
-        ser.write(msg.encode())
+        data = msg.encode()
+        ser.write(data)
         ser.flush()
-        time.sleep(0.002)
+        # Hold DE until all bytes have left the UART shift register.
+        # 10 bits per byte (start + 8 data + stop) at 9600 baud + 2 ms margin.
+        time.sleep(len(data) * 10 / BAUD + 0.002)
         GPIO.output(PIN_DE, GPIO.LOW)    # release bus
 
         echo = ser.readline().decode(errors="replace")
