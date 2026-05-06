@@ -79,7 +79,7 @@ def demo(cooker: CookerDevice, plater: PlatingArmDevice,
     logger.info("demo: complete")
 
 
-def main_i2c():
+def main_i2c(run_demo_on_start: bool = False):
     display = SSD1306Display()
     with I2CBus(bus_num=1) as bus:
         cooker     = CookerDevice(bus)
@@ -101,8 +101,10 @@ def main_i2c():
         server.start()
         display.set_state(MachineState.IDLE)
 
-        if online:
+        if online and run_demo_on_start:
             demo(cooker, plater, ingredient, cutter, online)
+        elif online:
+            logger.info("startup demo disabled — waiting for explicit commands")
         else:
             logger.warning("no devices found — running headless (API still available)")
 
@@ -114,7 +116,7 @@ def main_i2c():
             logger.info("shutting down")
 
 
-def main_serial(cooker_port, plater_port, ingredient_port, cutter_port):
+def main_serial(cooker_port, plater_port, ingredient_port, cutter_port, run_demo_on_start: bool = False):
     display = SSD1306Display()
     buses = [
         SerialBus(cooker_port),
@@ -141,9 +143,12 @@ def main_serial(cooker_port, plater_port, ingredient_port, cutter_port):
         server.start()
         display.set_state(MachineState.IDLE)
 
-        if online:
+        if online and run_demo_on_start:
             demo(cooker, plater, ingredient, cutter, online)
-        else:
+        elif online:
+            logger.info("startup demo disabled — waiting for explicit commands")
+
+        if not online:
             logger.warning("no devices found — running headless (API still available)")
 
         logger.info("serving — Ctrl-C to quit")
@@ -161,6 +166,8 @@ def main():
     log.setup()
     logger.info("Tastebox controller starting")
 
+    run_demo_on_start = "--demo" in sys.argv
+
     if "--serial" in sys.argv:
         ports = [a for a in sys.argv if a.startswith('/dev/') or a.startswith('COM')]
         if len(ports) < 4:
@@ -168,10 +175,10 @@ def main():
             logger.error("  python master.py --serial /dev/ttyUSB0 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3")
             sys.exit(1)
         logger.info("mode: serial  ports=%s", ports[:4])
-        main_serial(*ports[:4])
+        main_serial(*ports[:4], run_demo_on_start=run_demo_on_start)
     else:
         logger.info("mode: I2C  bus=1")
-        main_i2c()
+        main_i2c(run_demo_on_start=run_demo_on_start)
 
 
 if __name__ == "__main__":

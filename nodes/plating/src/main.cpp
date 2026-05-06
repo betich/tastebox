@@ -385,33 +385,39 @@ void updateArm() {
   // Handle A↔B sequences
   if (sequence_state == SEQ_PHASE_1) {
     if (sequence_target == CMD_ARM_SEQ_GOTO_B) {
-      // Phase 1: open lid
-      if (lid_state != MOT_MOVING) {
+      // Phase 1: open lid, then advance once it reaches open.
+      if (lid_state == MOT_AT_B) {
+        Serial.println("[seq-A->B] phase 1 complete: lid open");
+        sequence_state = SEQ_PHASE_2;
+      } else if (lid_state == MOT_AT_A) {
         lidDriveFwd(); lid_target = MOT_AT_B; lid_state = MOT_MOVING;
         lid_timed = true; lid_start_ms = millis(); status_reg |= 0x04;
         uint16_t lid_open_dur = lid_dur_ms + DEFAULT_LID_OPEN_EXTRA;
         Serial.print("[seq-A->B] phase 1: open lid ("); Serial.print(lid_dur_ms); Serial.print("ms + ");
         Serial.print(DEFAULT_LID_OPEN_EXTRA); Serial.print("ms extra = "); Serial.print(lid_open_dur); Serial.println("ms)");
       } else if (lid_state == MOT_MOVING) {
-        // Wait for lid to finish
+        // Wait for lid to finish.
         uint16_t effective_lid_dur = lid_dur_ms + DEFAULT_LID_OPEN_EXTRA;
         if (millis() - lid_start_ms >= effective_lid_dur) {
-          lidCoast(); lid_state = MOT_AT_B; status_reg &= ~0x04;
+          lidCoast(); lid_state = MOT_AT_B; lid_timed = false; status_reg &= ~0x04;
           Serial.println("[seq-A->B] phase 1 complete: lid open");
           sequence_state = SEQ_PHASE_2;
         }
       }
     }
     else if (sequence_target == CMD_ARM_SEQ_GOTO_A) {
-      // Phase 1: move arm back to home
-      if (arm_state != MOT_MOVING) {
+      // Phase 1: move arm back home, then advance once it reaches home.
+      if (arm_state == MOT_AT_A) {
+        Serial.println("[seq-B->A] phase 1 complete: arm home");
+        sequence_state = SEQ_PHASE_2;
+      } else if (arm_state == MOT_AT_B) {
         armDriveBwd(); arm_target = MOT_AT_A; arm_state = MOT_MOVING;
         arm_timed = true; arm_start_ms = millis(); status_reg |= 0x02;
         Serial.print("[seq-B->A] phase 1: retract arm ("); Serial.print(arm_dur_ms); Serial.println("ms)");
       } else if (arm_state == MOT_MOVING) {
-        // Wait for arm to finish
+        // Wait for arm to finish.
         if (millis() - arm_start_ms >= arm_dur_ms) {
-          armCoast(); arm_state = MOT_AT_A; status_reg &= ~0x02;
+          armCoast(); arm_state = MOT_AT_A; arm_timed = false; status_reg &= ~0x02;
           Serial.println("[seq-B->A] phase 1 complete: arm home");
           sequence_state = SEQ_PHASE_2;
         }
@@ -420,33 +426,42 @@ void updateArm() {
   }
   else if (sequence_state == SEQ_PHASE_2) {
     if (sequence_target == CMD_ARM_SEQ_GOTO_B) {
-      // Phase 2: move arm to plate
-      if (arm_state != MOT_MOVING) {
+      // Phase 2: move arm to plate, then finish once it reaches plate.
+      if (arm_state == MOT_AT_B) {
+        Serial.println("[seq-A->B] complete: at B (open+plate)");
+        sequence_state = SEQ_IDLE;
+        sequence_target = 0;
+      } else if (arm_state == MOT_AT_A) {
         armDriveFwd(); arm_target = MOT_AT_B; arm_state = MOT_MOVING;
         arm_timed = true; arm_start_ms = millis(); status_reg |= 0x02;
         Serial.print("[seq-A->B] phase 2: move arm to plate ("); Serial.print(arm_dur_ms); Serial.println("ms)");
       } else if (arm_state == MOT_MOVING) {
-        // Wait for arm to finish
+        // Wait for arm to finish.
         if (millis() - arm_start_ms >= arm_dur_ms) {
-          armCoast(); arm_state = MOT_AT_B; status_reg &= ~0x02;
+          armCoast(); arm_state = MOT_AT_B; arm_timed = false; status_reg &= ~0x02;
           Serial.println("[seq-A->B] complete: at B (open+plate)");
           sequence_state = SEQ_IDLE;
+          sequence_target = 0;
         }
       }
     }
     else if (sequence_target == CMD_ARM_SEQ_GOTO_A) {
-      // Phase 2: close lid
-      if (lid_state != MOT_MOVING) {
+      // Phase 2: close lid, then finish once it reaches closed.
+      if (lid_state == MOT_AT_A) {
+        Serial.println("[seq-B->A] complete: at A (home+closed)");
+        sequence_state = SEQ_IDLE;
+        sequence_target = 0;
+      } else if (lid_state == MOT_AT_B) {
         lidDriveBwd(); lid_target = MOT_AT_A; lid_state = MOT_MOVING;
         lid_timed = true; lid_start_ms = millis(); status_reg |= 0x04;
         Serial.print("[seq-B->A] phase 2: close lid ("); Serial.print(lid_dur_ms); Serial.println("ms)");
       } else if (lid_state == MOT_MOVING) {
-        // Wait for lid to finish
+        // Wait for lid to finish.
         if (millis() - lid_start_ms >= lid_dur_ms) {
-          lidCoast(); lid_state = MOT_AT_A; status_reg &= ~0x04;
+          lidCoast(); lid_state = MOT_AT_A; lid_timed = false; status_reg &= ~0x04;
           Serial.println("[seq-B->A] complete: at A (home+closed)");
           sequence_state = SEQ_IDLE;
-
+          sequence_target = 0;
         }
       }
     }
@@ -520,6 +535,9 @@ void setup() {
 
 void loop() {
   handleSerial();
+  if (limitHit()) {
+    limit_triggered = true;
+  }
   updateArm();
   updateLid();
 

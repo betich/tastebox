@@ -7,7 +7,7 @@ import time
 import RPi.GPIO as GPIO
 import serial
 
-UART_PORT = "/dev/ttyS0"
+UART_PORT = "/dev/ttyAMA0"
 BAUD = 9600
 PIN_DE = 23
 PIN_RE = 24
