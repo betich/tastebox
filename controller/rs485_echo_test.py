@@ -28,7 +28,7 @@ try:
         ser.flush()
         # Hold DE until all bytes have left the UART shift register.
         # 10 bits per byte (start + 8 data + stop) at 9600 baud + 2 ms margin.
-        time.sleep(len(data) * 10 / BAUD + 0.002)
+        time.sleep(len(data) * 10 / BAUD + 0.005)
         GPIO.output(PIN_DE, GPIO.LOW)    # release bus
 
         echo = ser.read(len(data)).decode(errors="replace")
@@ -39,7 +39,6 @@ try:
         else:
             print(f"[TMO] no echo — check MAX485 wiring / DE pin / UART TX")
 
-        ser.reset_input_buffer()
         time.sleep(0.5)
 finally:
     GPIO.cleanup()
