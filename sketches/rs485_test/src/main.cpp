@@ -30,9 +30,14 @@ static void sendMsg(const char* msg) {
 
 void loop() {
 #ifdef BEACON_MODE
-  // Continuously transmit so A/B voltages can be measured without needing PING.
-  sendMsg("BEACON\n");
-  Serial.println("BEACON sent");
+  // Hold DE HIGH permanently so a multimeter can confirm MAX485 is driving A/B.
+  digitalWrite(PIN_DE_RE, HIGH);
+  digitalWrite(LED_BUILTIN, HIGH);
+  Serial.println("DE HIGH — measure A/B now");
+  delay(3000);
+  digitalWrite(PIN_DE_RE, LOW);
+  digitalWrite(LED_BUILTIN, LOW);
+  Serial.println("DE LOW");
   delay(1000);
   return;
 #endif
