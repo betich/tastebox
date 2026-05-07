@@ -375,13 +375,14 @@ void updateLid() {
   if (lid_cmd_next) {
     uint8_t cmd = lid_cmd_next; lid_cmd_next = 0;
     switch (cmd) {
-      case CMD_LID_OPEN:
+      case CMD_LID_OPEN: {
         lidDriveFwd(); lid_target = MOT_AT_B; lid_state = MOT_MOVING;
         lid_timed = true; lid_start_ms = millis(); status_reg |= 0x04;
         uint16_t lid_open_dur = lid_dur_ms + DEFAULT_LID_OPEN_EXTRA;
         Serial.print("[lid] open ("); Serial.print(lid_dur_ms); Serial.print("ms + ");
         Serial.print(DEFAULT_LID_OPEN_EXTRA); Serial.print("ms extra = "); Serial.print(lid_open_dur); Serial.println("ms)");
         break;
+      }
       case CMD_LID_CLOSE:
         lidDriveBwd(); lid_target = MOT_AT_A; lid_state = MOT_MOVING;
         lid_timed = true; lid_start_ms = millis(); status_reg |= 0x04;
