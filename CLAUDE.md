@@ -68,7 +68,7 @@ All four nodes share the same PlatformIO config (`atmelavr`, `nanoatmega328`, Ar
 | cooker | `0x42` | Rotary encoder (pins 2,3), click button (4), buzzer (8) |
 | plating | `0x43` | Pan stepper (D7/D8/D4), arm motor (D13/D12/D11), RS-485 RO=A0/DI=A1/DE+RE=A2 |
 | ingredient | `0x44` | Coil-feed stepper motor |
-| cutter | `0x45` | Servo × 2 (lid), linear pistons × 2, DC motor |
+| cutter | `0x45` | Servo × 2 (lid), linear pistons × 2, DC motor, RS-485 RO=D2/DI=D3/DE+RE=D4 |
 
 `/sketches/` holds reference Arduino `.ino` files; production firmware lives in `/nodes/*/src/main.cpp`.
 
