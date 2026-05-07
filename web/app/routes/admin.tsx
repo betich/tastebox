@@ -12,7 +12,7 @@ interface StatusData {
   cooker?:     { online: boolean; on: boolean; position: number }
   plating?:    { online: boolean; m1_busy: boolean; m2_busy: boolean; m1_pos: number; arm: number; lid: number; lid_busy: boolean }
   ingredient?: { online: boolean; busy: boolean; remaining_ms: number }
-  cutter?:     { online: boolean; lid_busy: boolean; piston1_busy: boolean; piston2_busy: boolean }
+  cutter?:     { online: boolean; door_busy: boolean; clamp_busy: boolean; roller_busy: boolean; scissor_busy: boolean }
 }
 
 // ── Loader ────────────────────────────────────────────────────────────────────
@@ -78,15 +78,20 @@ export async function action({ request }: ActionFunctionArgs) {
       if (command === "stop")       await post("/ingredient/stop")
       if (command === "set_rev")    await post("/ingredient/revolutions", { steps: Math.round(value) })
     } else if (device === "cutter") {
-      if (command === "open_lid")   await post("/cutter/lid",
-                                      { action: "open",  ...(value > 0 ? { duration_ms: Math.round(value) } : {}) })
-      if (command === "close_lid")  await post("/cutter/lid",
-                                      { action: "close", ...(value > 0 ? { duration_ms: Math.round(value) } : {}) })
-      if (command === "p1_ext")     await post("/cutter/piston", { which: 1, action: "extend" })
-      if (command === "p1_ret")     await post("/cutter/piston", { which: 1, action: "retract" })
-      if (command === "p2_ext")     await post("/cutter/piston", { which: 2, action: "extend" })
-      if (command === "p2_ret")     await post("/cutter/piston", { which: 2, action: "retract" })
-      if (command === "stop_all")   await post("/cutter/stop")
+      if (command === "door_open")       await post("/cutter/door",    { action: "open" })
+      if (command === "door_close")      await post("/cutter/door",    { action: "close" })
+      if (command === "clamp")           await post("/cutter/clamp",   { action: "clamp" })
+      if (command === "release")         await post("/cutter/clamp",   { action: "release" })
+      if (command === "roller_fwd")      await post("/cutter/roller",  { action: "fwd" })
+      if (command === "roller_rev")      await post("/cutter/roller",  { action: "rev" })
+      if (command === "roller_stop")     await post("/cutter/roller",  { action: "stop" })
+      if (command === "scissor_fwd")     await post("/cutter/scissor", { action: "fwd" })
+      if (command === "scissor_rev")     await post("/cutter/scissor", { action: "rev" })
+      if (command === "scissor_stop")    await post("/cutter/scissor", { action: "stop" })
+      if (command === "pepper_dispense") await post("/cutter/pepper",  { action: "dispense" })
+      if (command === "pump_on")         await post("/cutter/pump",    { action: "on" })
+      if (command === "pump_off")        await post("/cutter/pump",    { action: "off" })
+      if (command === "salt_dispense")   await post("/cutter/salt",    { action: "dispense" })
     } else if (device === "system") {
       if (command === "set_state")
         await post("/state", { state: form.get("state_name") as string })
@@ -309,9 +314,10 @@ function StatusRow({ status, device }: { status: StatusData | null; device: Devi
     const d = data as NonNullable<StatusData["cutter"]>
     return (
       <div className="flex gap-4 text-[18px] text-neutral-300 font-mono flex-wrap">
-        <span>lid <strong className={d.lid_busy ? "text-yellow-400" : "text-neutral-500"}>{d.lid_busy ? "busy" : "idle"}</strong></span>
-        <span>p1 <strong className={d.piston1_busy ? "text-yellow-400" : "text-neutral-500"}>{d.piston1_busy ? "busy" : "idle"}</strong></span>
-        <span>p2 <strong className={d.piston2_busy ? "text-yellow-400" : "text-neutral-500"}>{d.piston2_busy ? "busy" : "idle"}</strong></span>
+        <span>door <strong className={d.door_busy ? "text-yellow-400" : "text-neutral-500"}>{d.door_busy ? "busy" : "idle"}</strong></span>
+        <span>clamp <strong className={d.clamp_busy ? "text-yellow-400" : "text-neutral-500"}>{d.clamp_busy ? "busy" : "idle"}</strong></span>
+        <span>roller <strong className={d.roller_busy ? "text-yellow-400" : "text-neutral-500"}>{d.roller_busy ? "busy" : "idle"}</strong></span>
+        <span>scissor <strong className={d.scissor_busy ? "text-yellow-400" : "text-neutral-500"}>{d.scissor_busy ? "busy" : "idle"}</strong></span>
       </div>
     )
   }
@@ -351,14 +357,14 @@ function DeviceStatusGrid({ status }: { status: StatusData | null }) {
   const x = status?.cutter
   return (
     <div className="grid grid-cols-4 gap-4">
-      <DeviceCard id="cooker"     addr="0x42" ctrlOnline={ctrlOnline} detected={c?.online ?? false}
+      <DeviceCard id="cooker"     addr="RS485 #01" ctrlOnline={ctrlOnline} detected={c?.online ?? false}
         detail={c?.online ? `pos ${c.position} · ${c.on ? "ON" : "off"}` : undefined} />
-      <DeviceCard id="plating"    addr="0x43" ctrlOnline={ctrlOnline} detected={p?.online ?? false}
+      <DeviceCard id="plating"    addr="RS485 #02" ctrlOnline={ctrlOnline} detected={p?.online ?? false}
         detail={p?.online ? `pan ${p.m1_pos} · arm ${ARM_LABELS[p.arm] ?? p.arm} · lid ${["closed","open","moving"][p.lid] ?? p.lid}` : undefined} />
-      <DeviceCard id="ingredient" addr="0x44" ctrlOnline={ctrlOnline} detected={i?.online ?? false}
+      <DeviceCard id="ingredient" addr="RS485 #03" ctrlOnline={ctrlOnline} detected={i?.online ?? false}
         detail={i?.online ? `${i.busy ? "busy" : "idle"} · ${i.remaining_ms}ms rem` : undefined} />
-      <DeviceCard id="cutter"     addr="0x45" ctrlOnline={ctrlOnline} detected={x?.online ?? false}
-        detail={x?.online ? `lid:${x.lid_busy?"busy":"idle"} p1:${x.piston1_busy?"busy":"idle"} p2:${x.piston2_busy?"busy":"idle"}` : undefined} />
+      <DeviceCard id="cutter"     addr="RS485 #04" ctrlOnline={ctrlOnline} detected={x?.online ?? false}
+        detail={x?.online ? `door:${x.door_busy?"busy":"idle"} clamp:${x.clamp_busy?"busy":"idle"} roller:${x.roller_busy?"busy":"idle"}` : undefined} />
     </div>
   )
 }
@@ -371,7 +377,7 @@ const FACE_LABELS: Record<Device, BtnMap> = {
   cooker:     { a: "Click",     b: "Reset",     x: null,        y: null        },
   plating:    { a: "Arm Disp",  b: "Arm Ret",   x: "Lid Open",  y: "Lid Close" },
   ingredient: { a: "A Dispense", b: "B Dispense", x: "Stop A",  y: "Stop B"   },
-  cutter:     { a: "Open Lid",  b: "Close Lid", x: "P2 Ext",   y: "P2 Ret"   },
+  cutter:     { a: "Door Open", b: "Door Close", x: "Clamp",    y: "Release"  },
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -422,10 +428,10 @@ export default function Admin() {
         right: () => send("b_bwd"),
       },
       cutter: {
-        up:    () => send("p1_ext"),
-        down:  () => send("p1_ret"),
-        left:  () => send("p2_ret"),
-        right: () => send("p2_ext"),
+        up:    () => send("roller_fwd"),
+        down:  () => send("roller_rev"),
+        left:  () => send("scissor_rev"),
+        right: () => send("scissor_fwd"),
       },
     }
     map[device][dir]?.()
@@ -452,10 +458,10 @@ export default function Admin() {
         y: () => send("b_stop"),
       },
       cutter: {
-        a: () => send("open_lid",  rVal * 20),
-        b: () => send("close_lid", rVal * 20),
-        x: () => send("p2_ext"),
-        y: () => send("p2_ret"),
+        a: () => send("door_open"),
+        b: () => send("door_close"),
+        x: () => send("clamp"),
+        y: () => send("release"),
       },
     }
     map[device][btn]?.()
@@ -465,19 +471,19 @@ export default function Admin() {
     cooker:     "Position (0–4)",
     plating:    "Pan Steps",
     ingredient: "Steps/rev (0–400)",
-    cutter:     "Lid Dur ×20ms",
+    cutter:     "—",
   }
   const rStickLabel: Record<Device, string> = {
     cooker:     "—",
     plating:    "Lid Dur ×50ms",
     ingredient: "—",
-    cutter:     "Piston Dur ×20ms",
+    cutter:     "—",
   }
   const lStickDesc: Record<Device, string> = {
     cooker:     "Release → set position (0–4)",
     plating:    "Release → move pan by steps",
     ingredient: "Release → set steps per revolution",
-    cutter:     "Value used for lid cmds (A/B)",
+    cutter:     "Not used",
   }
   const rStickDesc: Record<Device, string> = {
     cooker:     "Not used",
@@ -489,7 +495,7 @@ export default function Admin() {
     cooker:     { up: "+1 pos", down: "−1 pos", left: "home" },
     plating:    { up: "arm fwd", down: "arm bwd", left: "lid bwd", right: "lid fwd" },
     ingredient: { up: "A fwd", down: "A bwd", left: "B fwd", right: "B bwd" },
-    cutter:     { up: "P1 ext", down: "P1 ret", left: "P2 ret", right: "P2 ext" },
+    cutter:     { up: "Roller Fwd", down: "Roller Rev", left: "Scissor Rev", right: "Scissor Fwd" },
   }
 
   const handleLCommit = useCallback((v: number) => {
@@ -592,6 +598,24 @@ export default function Admin() {
           <Joystick label={lStickLabel[device]} onValue={setLVal} onCommit={handleLCommit} description={lStickDesc[device]} />
           <Joystick label={rStickLabel[device]} onValue={setRVal} onCommit={handleRCommit} description={rStickDesc[device]} />
         </div>
+
+        {/* Cutter dispenser buttons */}
+        {device === "cutter" && (
+          <div className="px-4">
+            <p className="text-[20px] text-neutral-500 mb-4">Dispensers</p>
+            <div className="flex gap-4 flex-wrap">
+              {(["pepper_dispense", "pump_on", "pump_off", "salt_dispense"] as const).map((cmd) => (
+                <button
+                  key={cmd}
+                  onClick={() => send(cmd)}
+                  className="px-6 py-3 rounded-xl bg-neutral-200 text-neutral-700 text-[20px] font-semibold active:bg-neutral-400"
+                >
+                  {cmd === "pepper_dispense" ? "Pepper" : cmd === "pump_on" ? "Pump On" : cmd === "pump_off" ? "Pump Off" : "Salt"}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* System state buttons */}
         <div className="mt-auto pt-8 border-t border-neutral-200">

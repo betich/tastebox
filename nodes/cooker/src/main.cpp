@@ -1,22 +1,30 @@
 #include <Arduino.h>
-#include <Wire.h>
+#include <RS485Node.h>
 
+// Encoder spoofer / cooktop I/O
 #define ENC_E  2   // orange - encoder A
 #define ENC_D  3   // blue   - encoder B
-#define ENC_C  4   // yellow - click/button
-#define BUZ    5   // green  - buzzer state (input)
+#define ENC_C  9   // yellow - click/button  (moved from D4 to free D9)
+#define BUZ    10  // green  - buzzer state (input)  (moved from D5 to free D10)
 #define BEEP   8   // buzzer output
 
-#define I2C_ADDRESS 0x42
-#define STEP_DELAY  5  // ms between quadrature steps
+// RS-485 (SoftwareSerial)
+#define PIN_RS485_RX    4
+#define PIN_RS485_TX    5
+#define PIN_RS485_DE_RE 6
 
-// I2C registers
+#define NODE_ADDR  0x42
+#define STEP_DELAY 5  // ms between quadrature steps
+
+// Registers
 #define REG_POS_HI  0x00
 #define REG_POS_LO  0x01
-#define REG_SW      0x02  // cooktop on/off (BUZ pin)
-#define REG_EVT     0x03  // bit0=CW, bit1=CCW, bit2=CLICK (clears on read)
-#define REG_CMD     0x10  // 0x01=reset, 0x04=click
-#define REG_SET_POS 0x11  // int16 target position
+#define REG_SW      0x02
+#define REG_EVT     0x03
+#define REG_CMD     0x10
+#define REG_SET_POS 0x11
+
+RS485Node node(NODE_ADDR, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
 
 // ── Encoder spoofer ──────────────────────────────────────────
 
@@ -61,14 +69,13 @@ bool isCooktopOn() {
 
 // ── State ────────────────────────────────────────────────────
 
-uint8_t          selectedReg   = 0x00;
-int16_t          currentPos    = 0;
-volatile int16_t targetPos     = 0;
-volatile bool    pendingClick  = false;
-volatile bool    pendingBeep   = false;
-volatile uint8_t eventFlags    = 0;
+int16_t  currentPos   = 0;
+int16_t  targetPos    = 0;
+bool     pendingClick = false;
+bool     pendingBeep  = false;
+uint8_t  eventFlags   = 0;
 
-// ── Register access (shared by I2C and serial) ───────────────
+// ── Register handlers ────────────────────────────────────────
 
 uint8_t processRead(uint8_t reg) {
   switch (reg) {
@@ -96,120 +103,29 @@ void processWrite(uint8_t reg, uint8_t* data, uint8_t len) {
   }
 }
 
-// ── I2C callbacks ────────────────────────────────────────────
-
-void onReceive(int numBytes) {
-  if (numBytes < 1) return;
-  selectedReg = Wire.read();
-  if (numBytes > 1) {
-    uint8_t data[8];
-    uint8_t len = 0;
-    while (Wire.available() && len < (uint8_t)sizeof(data)) data[len++] = Wire.read();
-    processWrite(selectedReg, data, len);
-  }
-}
-
-void onRequest() {
-  Wire.write(processRead(selectedReg));
-}
-
-// ── Serial help ──────────────────────────────────────────────
-
-void printHelp() {
-  Serial.println("── cooker node (0x42) ───────────────────");
-  Serial.println("Pins: ENC_E D2 / ENC_D D3 / ENC_C D4");
-  Serial.println("      BUZ D5 (input) / BEEP D8 (output)");
-  Serial.println("-----------------------------------------");
-  Serial.println("Commands (W 10 <cmd>):");
-  Serial.println("  01  RESET    — zero position + beep");
-  Serial.println("  04  CLICK    — trigger encoder click");
-  Serial.println("Set position: W 11 HH LL  (int16 steps)");
-  Serial.println("  W 11 00 01  →   +1 step  (CW)");
-  Serial.println("  W 11 FF FF  →   -1 step  (CCW)");
-  Serial.println("  W 11 00 04  →   +4 steps");
-  Serial.println("  W 11 FF FC  →   -4 steps");
-  Serial.println("-----------------------------------------");
-  Serial.println("Read:");
-  Serial.println("  R 00  pos hi");
-  Serial.println("  R 01  pos lo");
-  Serial.println("  R 02  switch (0=off 1=on)");
-  Serial.println("  R 03  events (bit0=CW bit1=CCW bit2=CLICK, clears on read)");
-  Serial.print(  "Pos now: "); Serial.println(currentPos);
-  Serial.println("-----------------------------------------");
-}
-
-// ── Serial handler ───────────────────────────────────────────
-// Protocol: "R HH\n" → "!HH\n"  |  "W HH DD...\n" → "!OK\n"  |  "help\n"
-
-void handleSerial() {
-  static char buf[48];
-  static uint8_t idx = 0;
-  while (Serial.available()) {
-    char c = (char)Serial.read();
-    if (c == '\n' || c == '\r') {
-      if (idx > 0) {
-        buf[idx] = '\0';
-        idx = 0;
-        if (strncmp(buf, "help", 4) == 0) {
-          printHelp();
-        } else if (buf[0] == 'R' && buf[1] == ' ') {
-          uint8_t reg = (uint8_t)strtoul(buf + 2, nullptr, 16);
-          uint8_t val = processRead(reg);
-          Serial.print('!');
-          if (val < 0x10) Serial.print('0');
-          Serial.println(val, HEX);
-        } else if (buf[0] == 'W' && buf[1] == ' ') {
-          char* p = buf + 2;
-          uint8_t reg = (uint8_t)strtoul(p, &p, 16);
-          uint8_t data[8];
-          uint8_t len = 0;
-          while (*p && len < (uint8_t)sizeof(data)) {
-            while (*p == ' ') p++;
-            if (*p) data[len++] = (uint8_t)strtoul(p, &p, 16);
-          }
-          processWrite(reg, data, len);
-          Serial.println("!OK");
-        } else {
-          Serial.println("?  (type 'help')");
-        }
-      }
-    } else if (idx < (uint8_t)sizeof(buf) - 1) {
-      buf[idx++] = c;
-    }
-  }
-}
-
 // ── Setup / Loop ─────────────────────────────────────────────
 
 void setup() {
   Serial.begin(115200);
 
-  pinMode(ENC_E, OUTPUT);
-  pinMode(ENC_D, OUTPUT);
-  pinMode(ENC_C, OUTPUT);
+  pinMode(ENC_E, OUTPUT); digitalWrite(ENC_E, LOW);
+  pinMode(ENC_D, OUTPUT); digitalWrite(ENC_D, LOW);
+  pinMode(ENC_C, OUTPUT); digitalWrite(ENC_C, LOW);
   pinMode(BUZ,   INPUT);
-  pinMode(BEEP,  OUTPUT);
+  pinMode(BEEP,  OUTPUT); digitalWrite(BEEP, HIGH);  // idle HIGH (active-low)
 
-  digitalWrite(ENC_E, LOW);
-  digitalWrite(ENC_D, LOW);
-  digitalWrite(ENC_C, LOW);
-  digitalWrite(BEEP,  HIGH);  // idle HIGH (active-low)
-
-  Wire.begin(I2C_ADDRESS);
-  Wire.onReceive(onReceive);
-  Wire.onRequest(onRequest);
+  node.begin();
+  node.setDefaultReadHandler(processRead);
+  node.setDefaultWriteHandler(processWrite);
 
   beep();
-  Serial.println("[cooker] ready — type 'help'");
+  Serial.println("[cooker] RS485 node 0x42 ready");
 }
 
 void loop() {
-  handleSerial();
+  node.poll();
 
-  if (pendingBeep) {
-    pendingBeep = false;
-    beep();
-  }
+  if (pendingBeep)  { pendingBeep = false; beep(); }
 
   if (pendingClick) {
     pendingClick = false;

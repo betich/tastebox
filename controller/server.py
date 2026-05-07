@@ -99,8 +99,11 @@ def status():
             }
             cutter_data = {
                 "online": cutter_ok,
-                **(_cutter.get_status_flags() if cutter_ok else
-                   {"lid_busy": False, "piston1_busy": False, "piston2_busy": False}),
+                **(_cutter.get_status_flags() if cutter_ok else {
+                    "door_busy": False, "clamp_busy": False,
+                    "roller_busy": False, "scissor_busy": False,
+                    "pepper_busy": False, "pump_busy": False, "salt_busy": False,
+                }),
             }
 
         return jsonify({
@@ -263,45 +266,79 @@ def ingredient_duration():
 
 # ── cutter (0x45) ─────────────────────────────────────────────────────────────
 
-@app.route("/cutter/lid", methods=["POST"])
-def cutter_lid():
-    data   = request.get_json() or {}
-    action = data.get("action", "close")
-    ms     = data.get("duration_ms")
+@app.route("/cutter/door", methods=["POST"])
+def cutter_door():
+    action = (request.get_json() or {}).get("action", "close")
     def _do():
         with _lock:
-            if ms is not None:
-                _cutter.set_lid_duration(int(ms))
-            if action == "open":
-                _cutter.open_lid()
-            else:
-                _cutter.close_lid()
+            if action == "open": _cutter.open_door()
+            else:                _cutter.close_door()
     return _safe(_do)
 
 
-@app.route("/cutter/piston", methods=["POST"])
-def cutter_piston():
-    data   = request.get_json() or {}
-    which  = int(data.get("which", 1))
-    action = data.get("action", "retract")
-    ms     = data.get("duration_ms")
+@app.route("/cutter/clamp", methods=["POST"])
+def cutter_clamp():
+    action = (request.get_json() or {}).get("action", "release")
     def _do():
         with _lock:
-            if ms is not None:
-                _cutter.set_piston_duration(int(ms))
-            if which == 1:
-                if action == "extend":
-                    _cutter.piston1_extend()
-                else:
-                    _cutter.piston1_retract()
-            else:
-                if action == "extend":
-                    _cutter.piston2_extend()
-                else:
-                    _cutter.piston2_retract()
+            if action == "clamp": _cutter.clamp()
+            else:                 _cutter.release()
     return _safe(_do)
 
 
-@app.route("/cutter/stop", methods=["POST"])
-def cutter_stop():
-    return _safe(lambda: _cutter.stop_all() or {})
+@app.route("/cutter/roller", methods=["POST"])
+def cutter_roller():
+    action = (request.get_json() or {}).get("action", "stop")
+    def _do():
+        with _lock:
+            if   action == "fwd": _cutter.roller_fwd()
+            elif action == "rev": _cutter.roller_rev()
+            else:                 _cutter.roller_stop()
+    return _safe(_do)
+
+
+@app.route("/cutter/scissor", methods=["POST"])
+def cutter_scissor():
+    action = (request.get_json() or {}).get("action", "stop")
+    def _do():
+        with _lock:
+            if   action == "fwd": _cutter.scissor_fwd()
+            elif action == "rev": _cutter.scissor_rev()
+            else:                 _cutter.scissor_stop()
+    return _safe(_do)
+
+
+@app.route("/cutter/pepper", methods=["POST"])
+def cutter_pepper():
+    action = (request.get_json() or {}).get("action", "stop")
+    def _do():
+        with _lock:
+            if action == "dispense": _cutter.pepper_dispense()
+            else:                    _cutter.pepper_stop()
+    return _safe(_do)
+
+
+@app.route("/cutter/pump", methods=["POST"])
+def cutter_pump():
+    action = (request.get_json() or {}).get("action", "off")
+    def _do():
+        with _lock:
+            if action == "on": _cutter.pump_on()
+            else:              _cutter.pump_off()
+    return _safe(_do)
+
+
+@app.route("/cutter/salt", methods=["POST"])
+def cutter_salt():
+    action = (request.get_json() or {}).get("action", "stop")
+    def _do():
+        with _lock:
+            if action == "dispense": _cutter.salt_dispense()
+            else:                    _cutter.salt_stop()
+    return _safe(_do)
+
+
+@app.route("/cutter/duration", methods=["POST"])
+def cutter_duration():
+    ms = int((request.get_json() or {}).get("ms", 1000))
+    return _safe(lambda: _cutter.set_duration(ms) or {})

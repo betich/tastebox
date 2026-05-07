@@ -1,7 +1,7 @@
 #include <Arduino.h>
-#include <Wire.h>
+#include <RS485Node.h>
 
-// Plater node — I2C slave at 0x43
+// Plater node — RS485 node 0x43
 // Pan stepper:  PUL→D13, DIR→D12, ENA→D11
 // Arm IBD_2:    L_IS→D4, R_IS→D5, L_PWM→D6 (fwd/plate), R_PWM→D7 (rev/home)
 // Lid IBD_2:    L_IS→D8, R_IS→D9, L_PWM→D2 (fwd/open),  R_PWM→D3 (rev/close)
@@ -37,8 +37,10 @@
 #define DEFAULT_LID_DUR_MS      4700
 #define DEFAULT_LID_OPEN_EXTRA   600  // extra ms for open only — accounts for initial tension
 
-// ── I2C ────────────────────────────────────────────────────
-#define I2C_ADDRESS    0x43
+// ── RS485 ───────────────────────────────────────────────────
+#define PIN_RS485_RX    A0
+#define PIN_RS485_TX    A1
+#define PIN_RS485_DE_RE A2
 
 // Read registers
 #define REG_PAN_POS_HI 0x00  // pan position high byte
@@ -155,32 +157,32 @@ bool limitHit() { return digitalRead(PIN_LIMIT) == HIGH; }
 
 // ── Instances / state ──────────────────────────────────────
 Stepper pan = { 13, 12, 11 };
+RS485Node node(0x43, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
 
-volatile int16_t pan_pos          = 0;
-volatile int16_t pan_target       = 0;
-volatile uint8_t status_reg       = 0;
-volatile uint8_t selected_reg     = 0;
-volatile bool    pending_pan_stop = false;
-volatile bool    pending_pan_home = false;
+int16_t pan_pos          = 0;
+int16_t pan_target       = 0;
+uint8_t status_reg       = 0;
+bool    pending_pan_stop = false;
+bool    pending_pan_home = false;
 
 uint8_t          arm_state     = MOT_AT_A;
 uint8_t          arm_target    = MOT_AT_A;
-volatile uint8_t arm_cmd_next  = 0;
+uint8_t          arm_cmd_next  = 0;
 uint16_t         arm_dur_ms    = DEFAULT_ARM_DUR_MS;
 unsigned long    arm_start_ms  = 0;
 bool             arm_timed     = false;
 
 uint8_t          lid_state     = MOT_AT_A;  // AT_A = closed
 uint8_t          lid_target    = MOT_AT_A;
-volatile uint8_t lid_cmd_next  = 0;
+uint8_t          lid_cmd_next  = 0;
 uint16_t         lid_dur_ms    = DEFAULT_LID_DUR_MS;
 unsigned long    lid_start_ms  = 0;
 bool             lid_timed     = false;
 
 // Sequence control
-volatile uint8_t sequence_state  = SEQ_IDLE;
-volatile uint8_t sequence_target = 0;  // CMD_ARM_SEQ_GOTO_B or CMD_ARM_SEQ_GOTO_A
-volatile bool    limit_triggered = false;
+uint8_t sequence_state  = SEQ_IDLE;
+uint8_t sequence_target = 0;  // CMD_ARM_SEQ_GOTO_B or CMD_ARM_SEQ_GOTO_A
+bool    limit_triggered = false;
 
 // ── Register access ────────────────────────────────────────
 uint8_t processRead(uint8_t reg) {
@@ -221,108 +223,6 @@ void processWrite(uint8_t reg, uint8_t* data, uint8_t len) {
     case REG_LID_DUR_HI:
       if (len >= 2) lid_dur_ms = (uint16_t)((data[0] << 8) | data[1]);
       break;
-  }
-}
-
-// ── I2C callbacks ──────────────────────────────────────────
-void onReceive(int n) {
-  if (n < 1) return;
-  selected_reg = Wire.read();
-  if (n > 1) {
-    uint8_t data[8], len = 0;
-    while (Wire.available() && len < 8) data[len++] = Wire.read();
-    processWrite(selected_reg, data, len);
-  }
-}
-void onRequest() { Wire.write(processRead(selected_reg)); }
-
-// ── Serial help ────────────────────────────────────────────
-void printHelp() {
-  Serial.println("── plating node (0x43) ──────────────────");
-  Serial.println("Pan stepper: PUL D13 / DIR D12 / ENA D11");
-  Serial.println("Arm IBD_2:   L_IS D4 / R_IS D5 / L_PWM D6 / R_PWM D7");
-  Serial.println("Lid IBD_2:   L_IS D8 / R_IS D9 / L_PWM D2 / R_PWM D3");
-  Serial.println("Limit (NC):  D10 / GND — e-stop arm only");
-  Serial.println("-----------------------------------------");
-  Serial.println("Pan (W 10 <cmd>):  01=STOP  02=HOME");
-  Serial.println("Pan target: W 11 HH LL  (int16 steps)");
-  Serial.println("  W 11 01 90 = 400 steps  W 11 06 40 = 1600 steps");
-  Serial.println("-----------------------------------------");
-  Serial.println("Arm (W 13 <cmd>):");
-  Serial.println("  01 RETRACT       — back to home for dur ms");
-  Serial.println("  02 DISPENSE      — to plate for dur ms");
-  Serial.println("  03 FWD_CONT  04 BWD_CONT  05 STOP");
-  Serial.println("  06 SEQ_GOTO_B    — sequence: open lid, then arm to plate");
-  Serial.println("  07 SEQ_GOTO_A    — sequence: arm home, then close lid");
-  Serial.println("  *** LIMIT SWITCH STOPS EVERYTHING (arm + lid) ***");
-  Serial.println("Arm dur: W 14 HH LL");
-  Serial.print(  "  now="); Serial.print(arm_dur_ms); Serial.println("ms");
-  Serial.println("-----------------------------------------");
-  Serial.println("Sequences (W 13 <cmd>):");
-  Serial.println("  06 SEQ_GOTO_B — open lid fully, THEN move arm to plate");
-  Serial.println("  07 SEQ_GOTO_A — move arm to home, THEN close lid");
-  Serial.println("-----------------------------------------");
-  Serial.println("Lid (W 16 <cmd>):");
-  Serial.println("  01 CLOSE — rev for dur ms");
-  Serial.println("  02 OPEN  — fwd for dur ms");
-  Serial.println("  03 FWD_CONT  04 BWD_CONT  05 STOP");
-  Serial.println("  *** LIMIT SWITCH STOPS EVERYTHING (arm + lid) ***");
-  Serial.println("Lid dur: W 17 HH LL");
-  Serial.print(  "  now="); Serial.print(lid_dur_ms); Serial.println("ms");
-  Serial.println("-----------------------------------------");
-  Serial.println("Duration ref: 01F4=500ms 03E8=1s 07D0=2s 0FA0=4s");
-  Serial.println("-----------------------------------------");
-  Serial.println("Read:");
-  Serial.println("  R 00/01 pan pos hi/lo");
-  Serial.println("  R 02  arm (0=home 1=plate 2=moving)");
-  Serial.println("  R 03  status (bit0=pan bit1=arm bit2=lid)");
-  Serial.println("  R 04  lid (0=closed 1=open 2=moving)");
-  Serial.println("-----------------------------------------");
-}
-
-// ── Serial handler ─────────────────────────────────────────
-void handleSerial() {
-  static char    buf[48];
-  static uint8_t idx = 0;
-  while (Serial.available()) {
-    char c = (char)Serial.read();
-    if (c == '\n' || c == '\r') {
-      if (idx > 0) {
-        buf[idx] = '\0'; idx = 0;
-        if (strncmp(buf, "help", 4) == 0) {
-          printHelp();
-        } else if (buf[0] == 'R' && buf[1] == ' ') {
-          uint8_t reg = (uint8_t)strtoul(buf + 2, nullptr, 16);
-          uint8_t val = processRead(reg);
-          Serial.print('!');
-          if (val < 0x10) Serial.print('0');
-          Serial.println(val, HEX);
-        } else if (buf[0] == 'W' && buf[1] == ' ') {
-          char* p = buf + 2;
-          uint8_t reg = (uint8_t)strtoul(p, &p, 16);
-          uint8_t data[8], len = 0;
-          while (*p && len < 8) {
-            while (*p == ' ') p++;
-            if (*p) data[len++] = (uint8_t)strtoul(p, &p, 16);
-          }
-          processWrite(reg, data, len);
-          Serial.print("!OK: wrote reg 0x");
-          if (reg < 0x10) Serial.print('0');
-          Serial.print(reg, HEX);
-          Serial.print(" with "); Serial.print(len); Serial.print(" byte(s): ");
-          for (uint8_t i = 0; i < len; i++) {
-            if (data[i] < 0x10) Serial.print('0');
-            Serial.print(data[i], HEX);
-            if (i < len - 1) Serial.print(' ');
-          }
-          Serial.println();
-        } else {
-          Serial.println("?  (type 'help')");
-        }
-      }
-    } else if (idx < (uint8_t)sizeof(buf) - 1) {
-      buf[idx++] = c;
-    }
   }
 }
 
@@ -527,14 +427,14 @@ void setup() {
   pinMode(PIN_LIMIT, INPUT_PULLUP);
 
   Serial.begin(115200);
-  Wire.begin(I2C_ADDRESS);
-  Wire.onReceive(onReceive);
-  Wire.onRequest(onRequest);
-  Serial.println("[plater] ready — type 'help'");
+  node.begin();
+  node.setDefaultReadHandler(processRead);
+  node.setDefaultWriteHandler(processWrite);
+  Serial.println("[plater] RS485 node 0x43 ready");
 }
 
 void loop() {
-  handleSerial();
+  node.poll();
   if (limitHit()) {
     limit_triggered = true;
   }

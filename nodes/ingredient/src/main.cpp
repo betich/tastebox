@@ -1,7 +1,7 @@
 #include <Arduino.h>
-#include <Wire.h>
+#include <RS485Node.h>
 
-// Ingredient stepper node — I2C slave at 0x44
+// Ingredient stepper node — RS485 node 0x44
 //
 // Stepper A: PUL→D2,  DIR→D3,  ENA→D4   (DIR inverted vs B)
 // Stepper B: PUL→D13, DIR→D12, ENA→D11
@@ -36,8 +36,10 @@
 
 #define STEP_HALF_US  800   // µs per half-pulse (~625 Hz)
 
-// ── I2C ────────────────────────────────────────────────────
-#define I2C_ADDRESS   0x44
+// ── RS485 ───────────────────────────────────────────────────
+#define PIN_RS485_RX    5
+#define PIN_RS485_TX    6
+#define PIN_RS485_DE_RE 7
 
 #define REG_STATUS_A  0x00
 #define REG_STATUS_B  0x01
@@ -69,9 +71,10 @@ struct Motor {
 Motor motorA = { IDLE, 0, 0 };
 Motor motorB = { IDLE, 0, 0 };
 
-volatile uint8_t  pending_cmd    = 0;
-volatile uint16_t set_steps_rev  = 1600;  // 1/8 microstepping — tweak until one vend = one revolution
-volatile uint8_t  selected_reg   = 0;
+uint8_t  pending_cmd   = 0;
+uint16_t set_steps_rev = 1600;  // 1/8 microstepping — tweak until one vend = one revolution
+
+RS485Node node(0x44, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
 
 // ── Motor helpers ──────────────────────────────────────────
 void enableA()  { digitalWrite(A_ENA, LOW); }
@@ -118,87 +121,6 @@ void processWrite(uint8_t reg, uint8_t* data, uint8_t len) {
     pending_cmd = data[0];
   } else if (reg == REG_REV_HI && len >= 2) {
     set_steps_rev = (uint16_t)((data[0] << 8) | data[1]);
-  }
-}
-
-// ── I2C callbacks ──────────────────────────────────────────
-void onReceive(int n) {
-  if (n < 1) return;
-  selected_reg = Wire.read();
-  if (n > 1) {
-    uint8_t data[8], len = 0;
-    while (Wire.available() && len < 8) data[len++] = Wire.read();
-    processWrite(selected_reg, data, len);
-  }
-}
-
-void onRequest() { Wire.write(processRead(selected_reg)); }
-
-// ── Serial ─────────────────────────────────────────────────
-void printHelp() {
-  Serial.println("── ingredient node (0x44) ───────────────");
-  Serial.println("Stepper A: PUL D2 / DIR D3 / ENA D4");
-  Serial.println("Stepper B: PUL D13 / DIR D12 / ENA D11");
-  Serial.println("-----------------------------------------");
-  Serial.println("Commands (W 10 <cmd>):");
-  Serial.println("  01  STOP_ALL");
-  Serial.println("  02  A FWD_CONT   — non-stop forward");
-  Serial.println("  03  A BWD_CONT   — non-stop backward");
-  Serial.println("  04  A DISPENSE   — 1 rev backward");
-  Serial.println("  05  A RETRACT    — 1 rev forward");
-  Serial.println("  06  B FWD_CONT   — non-stop forward");
-  Serial.println("  07  B BWD_CONT   — non-stop backward");
-  Serial.println("  08  B DISPENSE   — 1 rev backward");
-  Serial.println("  09  B RETRACT    — 1 rev forward");
-  Serial.println("  0A  STOP_A");
-  Serial.println("  0B  STOP_B");
-  Serial.println("-----------------------------------------");
-  Serial.println("Steps/rev: W 11 HH LL  (uint16)");
-  Serial.println("  W 11 00 C8  →  200 steps (full step)");
-  Serial.println("  W 11 01 90  →  400 steps (1/2 step)");
-  Serial.println("  W 11 03 20  →  800 steps (1/4 step)");
-  Serial.println("  W 11 06 40  → 1600 steps (1/8 step)  ← default");
-  Serial.println("-----------------------------------------");
-  Serial.println("Read:");
-  Serial.println("  R 00  status A  (bit0=busy bit1=bwd)");
-  Serial.println("  R 01  status B  (bit0=busy bit1=bwd)");
-  Serial.print(  "Steps/rev now: "); Serial.println(set_steps_rev);
-  Serial.println("-----------------------------------------");
-}
-
-void handleSerial() {
-  static char    buf[48];
-  static uint8_t idx = 0;
-  while (Serial.available()) {
-    char c = (char)Serial.read();
-    if (c == '\n' || c == '\r') {
-      if (idx > 0) {
-        buf[idx] = '\0'; idx = 0;
-        if (strncmp(buf, "help", 4) == 0) {
-          printHelp();
-        } else if (buf[0] == 'R' && buf[1] == ' ') {
-          uint8_t reg = (uint8_t)strtoul(buf + 2, nullptr, 16);
-          uint8_t val = processRead(reg);
-          Serial.print('!');
-          if (val < 0x10) Serial.print('0');
-          Serial.println(val, HEX);
-        } else if (buf[0] == 'W' && buf[1] == ' ') {
-          char* p = buf + 2;
-          uint8_t reg = (uint8_t)strtoul(p, &p, 16);
-          uint8_t data[8], len = 0;
-          while (*p && len < 8) {
-            while (*p == ' ') p++;
-            if (*p) data[len++] = (uint8_t)strtoul(p, &p, 16);
-          }
-          processWrite(reg, data, len);
-          Serial.println("!OK");
-        } else {
-          Serial.println("?  (type 'help')");
-        }
-      }
-    } else if (idx < 47) {
-      buf[idx++] = c;
-    }
   }
 }
 
@@ -275,14 +197,14 @@ void setup() {
   disableA(); disableB();
 
   Serial.begin(115200);
-  Wire.begin(I2C_ADDRESS);
-  Wire.onReceive(onReceive);
-  Wire.onRequest(onRequest);
-  Serial.println("[ingredient] ready — type 'help'");
+  node.begin();
+  node.setDefaultReadHandler(processRead);
+  node.setDefaultWriteHandler(processWrite);
+  Serial.println("[ingredient] RS485 node 0x44 ready");
 }
 
 void loop() {
-  handleSerial();
+  node.poll();
 
   if (pending_cmd) {
     handleCommand(pending_cmd);

@@ -1,286 +1,144 @@
 #include <Arduino.h>
-#include <Wire.h>
+#include <RS485Node.h>
 #include <Servo.h>
 
-// Cutter & lid opener node — I2C slave at 0x45
-// Lid DC motor (servo signal): D3
-// Piston 1 (digital):          D5
-// Piston 2 (digital):          D7
-// Servo 1 (5V):                D9
-// Servo 2 (5V):                D11
+// Cutter node — RS485 node 0x45
+// RS485:         RO=D2, DI=D3, DE/RE=D4
+// Door servo:    D5  (0°=closed, 90°=open)
+// Clamp servo:   D6  (0°=release, 90°=clamp)
+// Roller L298N:  IN1=D7, IN2=D8
+// Scissor L298N: IN3=D9, IN4=D10
+// Pepper servo:  D11 (0°=idle, 180°=dispense)
+// Pump servo:    D12 (0°=off, 90°=on)
+// Salt servo:    A0  (0°=idle, 180°=dispense)
 
-// ── Hardware pins ──────────────────────────────────────────
-#define PIN_LID       3
-#define PIN_PISTON1   5
-#define PIN_PISTON2   7
-#define PIN_SERVO1    9
-#define PIN_SERVO2    11
+// ── Pins ───────────────────────────────────────────────────
+#define PIN_RS485_RX    2
+#define PIN_RS485_TX    3
+#define PIN_RS485_DE_RE 4
 
-#define LID_OPEN_ANGLE   90
-#define LID_CLOSE_ANGLE   0
+#define PIN_DOOR    5
+#define PIN_CLAMP   6
+#define PIN_ROLL_1  7
+#define PIN_ROLL_2  8
+#define PIN_SCIS_1  9
+#define PIN_SCIS_2  10
+#define PIN_PEPPER  11
+#define PIN_PUMP    12
+#define PIN_SALT    A0
 
-// ── I2C ────────────────────────────────────────────────────
-#define I2C_ADDRESS       0x45
+// ── Registers ──────────────────────────────────────────────
+#define REG_STATUS      0x00
+#define REG_DOOR_CMD    0x11
+#define REG_CLAMP_CMD   0x12
+#define REG_ROLLER_CMD  0x13
+#define REG_SCISSOR_CMD 0x14
+#define REG_PEPPER_CMD  0x15
+#define REG_PUMP_CMD    0x16
+#define REG_SALT_CMD    0x17
+#define REG_DUR_HI      0x18
 
-#define REG_STATUS        0x00  // bit0=lid_busy, bit1=p1_busy, bit2=p2_busy (read)
-#define REG_CMD           0x10  // commands (write)
-#define REG_SERVO1_ANGLE  0x11  // servo1 angle 0-180 (write)
-#define REG_SERVO2_ANGLE  0x12  // servo2 angle 0-180 (write)
-#define REG_LID_DUR_HI    0x13  // lid duration ms high byte (write)
-#define REG_LID_DUR_LO    0x14  // lid duration ms low byte (write, sent with 0x13)
-#define REG_PST_DUR_HI    0x15  // piston duration ms high byte (write)
-#define REG_PST_DUR_LO    0x16  // piston duration ms low byte (write, sent with 0x15)
-
-#define CMD_STOP_ALL    0x01
-#define CMD_OPEN_LID    0x02
-#define CMD_CLOSE_LID   0x03
-#define CMD_PISTON1_EXT 0x04
-#define CMD_PISTON1_RET 0x05
-#define CMD_PISTON2_EXT 0x06
-#define CMD_PISTON2_RET 0x07
+// STATUS bits
+#define BIT_DOOR    0x01
+#define BIT_CLAMP   0x02
+#define BIT_ROLLER  0x04
+#define BIT_SCISSOR 0x08
+#define BIT_PEPPER  0x10
+#define BIT_PUMP    0x20
+#define BIT_SALT    0x40
 
 // ── State ──────────────────────────────────────────────────
-volatile uint8_t  pending_cmd  = 0;
-volatile uint16_t lid_dur      = 1000;
-volatile uint16_t pst_dur      = 1000;
-volatile uint8_t  selected_reg = 0;
+uint8_t  status_reg = 0;
+uint16_t op_dur     = 1000;
 
-uint8_t       i2c_status  = 0;
+unsigned long pepper_start = 0;
+bool          pepper_timed = false;
+unsigned long salt_start   = 0;
+bool          salt_timed   = false;
 
-unsigned long lid_start   = 0;
-bool          lid_running = false;
+Servo door_srv, clamp_srv, pepper_srv, pump_srv, salt_srv;
+RS485Node node(0x45, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
 
-unsigned long p1_start    = 0;
-bool          p1_running  = false;
-
-unsigned long p2_start    = 0;
-bool          p2_running  = false;
-
-Servo lid_servo, servo1, servo2;
-
-// ── Register access (shared by I2C and serial) ─────────────
-
+// ── Register handlers ──────────────────────────────────────
 uint8_t processRead(uint8_t reg) {
-  switch (reg) {
-    case REG_STATUS: return i2c_status;
-    default:         return 0xFF;
-  }
+  if (reg == REG_STATUS) return status_reg;
+  return 0xFF;
 }
 
 void processWrite(uint8_t reg, uint8_t* data, uint8_t len) {
   if (len < 1) return;
   switch (reg) {
-    case REG_CMD:
-      pending_cmd = data[0];
+    case REG_DOOR_CMD:
+      if (data[0] == 0x01) { door_srv.write(90);  status_reg |= BIT_DOOR;   Serial.println("[door] open");    }
+      else                  { door_srv.write(0);   status_reg &= ~BIT_DOOR;  Serial.println("[door] close");   }
       break;
-    case REG_SERVO1_ANGLE:
-      servo1.write((data[0] > 180) ? 180 : data[0]);
+    case REG_CLAMP_CMD:
+      if (data[0] == 0x01) { clamp_srv.write(90); status_reg |= BIT_CLAMP;  Serial.println("[clamp] clamp");  }
+      else                  { clamp_srv.write(0);  status_reg &= ~BIT_CLAMP; Serial.println("[clamp] release");}
       break;
-    case REG_SERVO2_ANGLE:
-      servo2.write((data[0] > 180) ? 180 : data[0]);
+    case REG_ROLLER_CMD:
+      if      (data[0] == 0x01) { digitalWrite(PIN_ROLL_1, HIGH); digitalWrite(PIN_ROLL_2, LOW);  status_reg |= BIT_ROLLER;  Serial.println("[roller] fwd"); }
+      else if (data[0] == 0x02) { digitalWrite(PIN_ROLL_1, LOW);  digitalWrite(PIN_ROLL_2, HIGH); status_reg |= BIT_ROLLER;  Serial.println("[roller] rev"); }
+      else                      { digitalWrite(PIN_ROLL_1, LOW);  digitalWrite(PIN_ROLL_2, LOW);  status_reg &= ~BIT_ROLLER; Serial.println("[roller] stop"); }
       break;
-    case REG_LID_DUR_HI:
-      if (len >= 2) lid_dur = (uint16_t)((data[0] << 8) | data[1]);
+    case REG_SCISSOR_CMD:
+      if      (data[0] == 0x01) { digitalWrite(PIN_SCIS_1, HIGH); digitalWrite(PIN_SCIS_2, LOW);  status_reg |= BIT_SCISSOR;  Serial.println("[scissor] fwd"); }
+      else if (data[0] == 0x02) { digitalWrite(PIN_SCIS_1, LOW);  digitalWrite(PIN_SCIS_2, HIGH); status_reg |= BIT_SCISSOR;  Serial.println("[scissor] rev"); }
+      else                      { digitalWrite(PIN_SCIS_1, LOW);  digitalWrite(PIN_SCIS_2, LOW);  status_reg &= ~BIT_SCISSOR; Serial.println("[scissor] stop"); }
       break;
-    case REG_PST_DUR_HI:
-      if (len >= 2) pst_dur = (uint16_t)((data[0] << 8) | data[1]);
+    case REG_PEPPER_CMD:
+      if (data[0] == 0x01) { pepper_srv.write(180); pepper_start = millis(); pepper_timed = true;  status_reg |= BIT_PEPPER;  Serial.println("[pepper] dispense"); }
+      else                  { pepper_srv.write(0);   pepper_timed = false;                          status_reg &= ~BIT_PEPPER; Serial.println("[pepper] stop");     }
+      break;
+    case REG_PUMP_CMD:
+      if (data[0] == 0x01) { pump_srv.write(90); status_reg |= BIT_PUMP;  Serial.println("[pump] on");  }
+      else                  { pump_srv.write(0);  status_reg &= ~BIT_PUMP; Serial.println("[pump] off"); }
+      break;
+    case REG_SALT_CMD:
+      if (data[0] == 0x01) { salt_srv.write(180); salt_start = millis(); salt_timed = true;  status_reg |= BIT_SALT;  Serial.println("[salt] dispense"); }
+      else                  { salt_srv.write(0);   salt_timed = false;                        status_reg &= ~BIT_SALT; Serial.println("[salt] stop");     }
+      break;
+    case REG_DUR_HI:
+      if (len >= 2) op_dur = (uint16_t)((data[0] << 8) | data[1]);
       break;
   }
 }
 
-// ── I2C callbacks ──────────────────────────────────────────
-
-void onReceive(int numBytes) {
-  if (numBytes < 1) return;
-  selected_reg = Wire.read();
-  if (numBytes > 1) {
-    uint8_t data[8];
-    uint8_t len = 0;
-    while (Wire.available() && len < (uint8_t)sizeof(data)) data[len++] = Wire.read();
-    processWrite(selected_reg, data, len);
+// ── Timed dispenser update ──────────────────────────────────
+void updateTimers() {
+  if (pepper_timed && millis() - pepper_start >= op_dur) {
+    pepper_srv.write(0); pepper_timed = false;
+    status_reg &= ~BIT_PEPPER;
+    Serial.println("[pepper] done");
   }
-}
-
-void onRequest() {
-  Wire.write(processRead(selected_reg));
-}
-
-// ── Serial help ─────────────────────────────────────────────
-
-void printHelp() {
-  Serial.println("── cutter node (0x45) ───────────────────");
-  Serial.println("Lid motor: D3  |  Piston1: D5  |  Piston2: D7");
-  Serial.println("Servo1: D9     |  Servo2: D11");
-  Serial.println("-----------------------------------------");
-  Serial.println("Commands (W 10 <cmd>):");
-  Serial.println("  01  STOP_ALL");
-  Serial.println("  02  OPEN_LID    — run for lid_dur ms");
-  Serial.println("  03  CLOSE_LID   — run for lid_dur ms");
-  Serial.println("  04  PISTON1_EXT — extend for pst_dur ms");
-  Serial.println("  05  PISTON1_RET — retract for pst_dur ms");
-  Serial.println("  06  PISTON2_EXT — extend for pst_dur ms");
-  Serial.println("  07  PISTON2_RET — retract for pst_dur ms");
-  Serial.println("-----------------------------------------");
-  Serial.println("Servo angle: W 11 AA  (servo1, 0-180)");
-  Serial.println("             W 12 AA  (servo2, 0-180)");
-  Serial.println("  e.g. W 11 5A  → servo1 to 90°");
-  Serial.println("Lid dur:    W 13 HH LL  (ms uint16)");
-  Serial.println("Piston dur: W 15 HH LL  (ms uint16)");
-  Serial.println("  W 13 01 F4  →  500 ms");
-  Serial.println("  W 13 03 E8  → 1000 ms (1 sec)  ← default");
-  Serial.println("  W 13 07 D0  → 2000 ms (2 sec)");
-  Serial.println("  W 13 0F A0  → 4000 ms (4 sec)");
-  Serial.println("-----------------------------------------");
-  Serial.println("Read:");
-  Serial.println("  R 00  status (bit0=lid_busy bit1=p1_busy bit2=p2_busy)");
-  Serial.print(  "Lid dur now: "); Serial.print(lid_dur); Serial.println(" ms");
-  Serial.print(  "Pst dur now: "); Serial.print(pst_dur); Serial.println(" ms");
-  Serial.println("-----------------------------------------");
-}
-
-// ── Serial handler ─────────────────────────────────────────
-// Protocol: "R HH\n" → "!HH\n"  |  "W HH DD...\n" → "!OK\n"  |  "help\n"
-
-void handleSerial() {
-  static char buf[48];
-  static uint8_t idx = 0;
-  while (Serial.available()) {
-    char c = (char)Serial.read();
-    if (c == '\n' || c == '\r') {
-      if (idx > 0) {
-        buf[idx] = '\0';
-        idx = 0;
-        if (strncmp(buf, "help", 4) == 0) {
-          printHelp();
-        } else if (buf[0] == 'R' && buf[1] == ' ') {
-          uint8_t reg = (uint8_t)strtoul(buf + 2, nullptr, 16);
-          uint8_t val = processRead(reg);
-          Serial.print('!');
-          if (val < 0x10) Serial.print('0');
-          Serial.println(val, HEX);
-        } else if (buf[0] == 'W' && buf[1] == ' ') {
-          char* p = buf + 2;
-          uint8_t reg = (uint8_t)strtoul(p, &p, 16);
-          uint8_t data[8];
-          uint8_t len = 0;
-          while (*p && len < (uint8_t)sizeof(data)) {
-            while (*p == ' ') p++;
-            if (*p) data[len++] = (uint8_t)strtoul(p, &p, 16);
-          }
-          processWrite(reg, data, len);
-          Serial.println("!OK");
-        } else {
-          Serial.println("?  (type 'help')");
-        }
-      }
-    } else if (idx < (uint8_t)sizeof(buf) - 1) {
-      buf[idx++] = c;
-    }
+  if (salt_timed && millis() - salt_start >= op_dur) {
+    salt_srv.write(0); salt_timed = false;
+    status_reg &= ~BIT_SALT;
+    Serial.println("[salt] done");
   }
 }
 
 // ── Setup / Loop ───────────────────────────────────────────
 void setup() {
-  lid_servo.attach(PIN_LID);
-  servo1.attach(PIN_SERVO1);
-  servo2.attach(PIN_SERVO2);
-  lid_servo.write(LID_CLOSE_ANGLE);
-  servo1.write(90);
-  servo2.write(90);
+  door_srv.attach(PIN_DOOR);     door_srv.write(0);
+  clamp_srv.attach(PIN_CLAMP);   clamp_srv.write(0);
+  pepper_srv.attach(PIN_PEPPER); pepper_srv.write(0);
+  pump_srv.attach(PIN_PUMP);     pump_srv.write(0);
+  salt_srv.attach(PIN_SALT);     salt_srv.write(0);
 
-  pinMode(PIN_PISTON1, OUTPUT);
-  pinMode(PIN_PISTON2, OUTPUT);
-  digitalWrite(PIN_PISTON1, LOW);
-  digitalWrite(PIN_PISTON2, LOW);
+  pinMode(PIN_ROLL_1, OUTPUT); digitalWrite(PIN_ROLL_1, LOW);
+  pinMode(PIN_ROLL_2, OUTPUT); digitalWrite(PIN_ROLL_2, LOW);
+  pinMode(PIN_SCIS_1, OUTPUT); digitalWrite(PIN_SCIS_1, LOW);
+  pinMode(PIN_SCIS_2, OUTPUT); digitalWrite(PIN_SCIS_2, LOW);
 
   Serial.begin(115200);
-  Wire.begin(I2C_ADDRESS);
-  Wire.onReceive(onReceive);
-  Wire.onRequest(onRequest);
-  Serial.println("[cutter] ready — type 'help'");
+  node.begin();
+  node.setDefaultReadHandler(processRead);
+  node.setDefaultWriteHandler(processWrite);
+  Serial.println("[cutter] RS485 node 0x45 ready");
 }
 
 void loop() {
-  handleSerial();
-
-  // Handle pending command
-  if (pending_cmd) {
-    uint8_t cmd = pending_cmd;
-    pending_cmd = 0;
-
-    switch (cmd) {
-      case CMD_STOP_ALL:
-        lid_servo.write(LID_CLOSE_ANGLE);
-        digitalWrite(PIN_PISTON1, LOW);
-        digitalWrite(PIN_PISTON2, LOW);
-        lid_running = p1_running = p2_running = false;
-        i2c_status  = 0;
-        Serial.println("[CMD] stop_all");
-        break;
-
-      case CMD_OPEN_LID:
-        lid_servo.write(LID_OPEN_ANGLE);
-        lid_start   = millis();
-        lid_running = true;
-        i2c_status |= 0x01;
-        Serial.println("[CMD] open_lid");
-        break;
-
-      case CMD_CLOSE_LID:
-        lid_servo.write(LID_CLOSE_ANGLE);
-        lid_start   = millis();
-        lid_running = true;
-        i2c_status |= 0x01;
-        Serial.println("[CMD] close_lid");
-        break;
-
-      case CMD_PISTON1_EXT:
-        digitalWrite(PIN_PISTON1, HIGH);
-        p1_start   = millis();
-        p1_running = true;
-        i2c_status |= 0x02;
-        Serial.println("[CMD] piston1_ext");
-        break;
-
-      case CMD_PISTON1_RET:
-        digitalWrite(PIN_PISTON1, LOW);
-        p1_start   = millis();
-        p1_running = true;
-        i2c_status |= 0x02;
-        Serial.println("[CMD] piston1_ret");
-        break;
-
-      case CMD_PISTON2_EXT:
-        digitalWrite(PIN_PISTON2, HIGH);
-        p2_start   = millis();
-        p2_running = true;
-        i2c_status |= 0x04;
-        Serial.println("[CMD] piston2_ext");
-        break;
-
-      case CMD_PISTON2_RET:
-        digitalWrite(PIN_PISTON2, LOW);
-        p2_start   = millis();
-        p2_running = true;
-        i2c_status |= 0x04;
-        Serial.println("[CMD] piston2_ret");
-        break;
-    }
-  }
-
-  // Non-blocking timeout checks
-  if (lid_running && millis() - lid_start >= lid_dur) {
-    lid_running  = false;
-    i2c_status  &= ~0x01;
-  }
-  if (p1_running && millis() - p1_start >= pst_dur) {
-    p1_running   = false;
-    digitalWrite(PIN_PISTON1, LOW);
-    i2c_status  &= ~0x02;
-  }
-  if (p2_running && millis() - p2_start >= pst_dur) {
-    p2_running   = false;
-    digitalWrite(PIN_PISTON2, LOW);
-    i2c_status  &= ~0x04;
-  }
+  node.poll();
+  updateTimers();
 }

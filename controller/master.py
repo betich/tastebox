@@ -116,6 +116,46 @@ def main_i2c(run_demo_on_start: bool = False):
             logger.info("shutting down")
 
 
+def main_rs485(port: str = "/dev/ttyUSB0", run_demo_on_start: bool = False):
+    from lib.rs485_bus import RS485Bus
+    from lib.devices import CookerDevice as _Cooker, PlatingArmDevice as _Plater
+    from lib.devices import IngredientDevice as _Ingredient, CutterDevice as _Cutter
+
+    display = SSD1306Display()
+    with RS485Bus(port) as bus:
+        cooker     = _Cooker(bus)
+        plater     = _Plater(bus)
+        ingredient = _Ingredient(bus)
+        cutter     = _Cutter(bus)
+
+        devices = [cooker, plater, ingredient, cutter]
+        results = probe_all(devices)
+        online  = {d for d, ok in results.items() if ok}
+        offline = set(devices) - online
+
+        if offline:
+            names = ", ".join(d.name for d in offline)
+            logger.warning("offline devices will be skipped: %s", names)
+
+        server.init(cooker, plater, ingredient, cutter, display)
+        server.start()
+        display.set_state(MachineState.IDLE)
+
+        if online and run_demo_on_start:
+            demo(cooker, plater, ingredient, cutter, online)
+        elif online:
+            logger.info("startup demo disabled — waiting for explicit commands")
+        else:
+            logger.warning("no devices found — running headless (API still available)")
+
+        logger.info("serving — Ctrl-C to quit")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            logger.info("shutting down")
+
+
 def main_serial(cooker_port, plater_port, ingredient_port, cutter_port, run_demo_on_start: bool = False):
     display = SSD1306Display()
     buses = [
@@ -168,7 +208,12 @@ def main():
 
     run_demo_on_start = "--demo" in sys.argv
 
-    if "--serial" in sys.argv:
+    if "--rs485" in sys.argv:
+        idx = sys.argv.index("--rs485")
+        port = sys.argv[idx + 1] if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("--") else "/dev/ttyUSB0"
+        logger.info("mode: RS485  port=%s", port)
+        main_rs485(port=port, run_demo_on_start=run_demo_on_start)
+    elif "--serial" in sys.argv:
         ports = [a for a in sys.argv if a.startswith('/dev/') or a.startswith('COM')]
         if len(ports) < 4:
             logger.error("serial mode requires 4 ports: cooker plater ingredient cutter")

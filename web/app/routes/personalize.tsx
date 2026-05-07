@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate, useSearchParams } from "react-router"
 import DiscreteBar from "../components/DiscreteBar"
 import { useGamepadInput } from "../lib/useGamepad"
@@ -15,15 +15,22 @@ export default function Personalize() {
   const [umami,    setUmami]    = useState(2)
   const [oiliness, setOiliness] = useState(3)
   const [pressing, setPressing]  = useState(false)
+  const [backEnabled, setBackEnabled] = useState(false)
 
   const MAX = 4  // SEGMENT_LABELS.length - 1
 
+  useEffect(() => {
+    const t = setTimeout(() => setBackEnabled(true), 5000)
+    return () => clearTimeout(t)
+  }, [])
+
   useGamepadInput((btn) => {
-    if (btn === 14) setUmami(u => Math.max(0, u - 1))    // D-pad left  → umami −1
-    if (btn === 15) setUmami(u => Math.min(MAX, u + 1))  // D-pad right → umami +1
-    if (btn === 12) setOiliness(o => Math.min(MAX, o + 1)) // D-pad up   → oiliness +1
-    if (btn === 13) setOiliness(o => Math.max(0, o - 1))   // D-pad down → oiliness −1
+    if (btn === 14) setUmami(u => Math.max(0, u - 1))
+    if (btn === 15) setUmami(u => Math.min(MAX, u + 1))
+    if (btn === 12) setOiliness(o => Math.min(MAX, o + 1))
+    if (btn === 13) setOiliness(o => Math.max(0, o - 1))
     if (btn === 0)  handleNext()
+    if (btn === 1 && backEnabled) navigate("/")
   })
 
   function handleNext() {
@@ -32,6 +39,14 @@ export default function Personalize() {
 
   return (
     <div className="screen">
+      <button
+        onClick={() => navigate("/")}
+        disabled={!backEnabled}
+        className="absolute top-8 left-10 text-[28px] text-neutral-400 bg-transparent border-none cursor-pointer"
+        style={{ opacity: backEnabled ? 1 : 0.3 }}
+      >
+        ← Back
+      </button>
       <div className="flex flex-col items-center justify-between h-full py-36 px-20">
 
         <h1 className="text-[96px] font-black uppercase leading-tight tracking-tight text-center">
