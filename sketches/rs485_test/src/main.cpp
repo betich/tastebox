@@ -1,9 +1,9 @@
 #include <Arduino.h>
 #include <SoftwareSerial.h>
 
-#define PIN_RX 4
-#define PIN_TX 5
-#define PIN_DE_RE 2
+#define PIN_RX 2
+#define PIN_TX 3
+#define PIN_DE_RE 4
 
 SoftwareSerial rs485(PIN_RX, PIN_TX);
 
