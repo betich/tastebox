@@ -17,20 +17,26 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
 
+  rs485.setTimeout(100);  // don't stall 1s on noise
   Serial.println("RS-485 slave ready — waiting for PING");
 }
 
-static void sendPong() {
-  digitalWrite(PIN_DE_RE, HIGH);  // transmit
-  rs485.print("PONG\n");
-  rs485.flush();
-  // One byte at 9600 baud ≈ 1.04 ms; hold DE/RE a bit longer to let the
-  // shift register drain before releasing the bus.
-  delayMicroseconds(2000);
-  digitalWrite(PIN_DE_RE, LOW);   // back to receive
+static void sendMsg(const char* msg) {
+  digitalWrite(PIN_DE_RE, HIGH);
+  rs485.print(msg);
+  delayMicroseconds(500);
+  digitalWrite(PIN_DE_RE, LOW);
 }
 
 void loop() {
+#ifdef BEACON_MODE
+  // Continuously transmit so A/B voltages can be measured without needing PING.
+  sendMsg("BEACON\n");
+  Serial.println("BEACON sent");
+  delay(1000);
+  return;
+#endif
+
   if (rs485.available()) {
     String msg = rs485.readStringUntil('\n');
     msg.trim();
@@ -39,7 +45,7 @@ void loop() {
 
     if (msg == "PING") {
       digitalWrite(LED_BUILTIN, HIGH);
-      sendPong();
+      sendMsg("PONG\n");
       Serial.println("Sent: PONG");
       delay(10);
       digitalWrite(LED_BUILTIN, LOW);
