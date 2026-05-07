@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <RS485Node.h>
+#include <SerialFrameHandler.h>
 
 // Encoder spoofer / cooktop I/O
 #define ENC_E  2   // orange - encoder A
@@ -24,7 +25,8 @@
 #define REG_CMD     0x10
 #define REG_SET_POS 0x11
 
-RS485Node node(NODE_ADDR, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
+RS485Node          node(NODE_ADDR, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
+SerialFrameHandler serial_handler(NODE_ADDR);
 
 // ── Encoder spoofer ──────────────────────────────────────────
 
@@ -118,12 +120,16 @@ void setup() {
   node.setDefaultReadHandler(processRead);
   node.setDefaultWriteHandler(processWrite);
 
+  serial_handler.setDefaultReadHandler(processRead);
+  serial_handler.setDefaultWriteHandler(processWrite);
+
   beep();
   Serial.println("[cooker] RS485 node 0x42 ready");
 }
 
 void loop() {
   node.poll();
+  serial_handler.poll(Serial);
 
   if (pendingBeep)  { pendingBeep = false; beep(); }
 

@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <RS485Node.h>
+#include <SerialFrameHandler.h>
 
 // Plater node — RS485 node 0x43
 // Pan stepper:  PUL→D13, DIR→D12, ENA→D11
@@ -157,7 +158,8 @@ bool limitHit() { return digitalRead(PIN_LIMIT) == HIGH; }
 
 // ── Instances / state ──────────────────────────────────────
 Stepper pan = { 13, 12, 11 };
-RS485Node node(0x43, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
+RS485Node          node(0x43, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
+SerialFrameHandler serial_handler(0x43);
 
 int16_t pan_pos          = 0;
 int16_t pan_target       = 0;
@@ -430,11 +432,16 @@ void setup() {
   node.begin();
   node.setDefaultReadHandler(processRead);
   node.setDefaultWriteHandler(processWrite);
+
+  serial_handler.setDefaultReadHandler(processRead);
+  serial_handler.setDefaultWriteHandler(processWrite);
+
   Serial.println("[plater] RS485 node 0x43 ready");
 }
 
 void loop() {
   node.poll();
+  serial_handler.poll(Serial);
   if (limitHit()) {
     limit_triggered = true;
   }

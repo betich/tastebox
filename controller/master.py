@@ -156,6 +156,52 @@ def main_rs485(port: str = "/dev/ttyUSB0", run_demo_on_start: bool = False):
             logger.info("shutting down")
 
 
+def main_serial_nodes(cooker_port: str, plater_port: str,
+                      ingredient_port: str, cutter_port: str,
+                      run_demo_on_start: bool = False):
+    """One NodeSerialBus (USB serial, same RS485 ASCII protocol) per node."""
+    from lib.strategy import open_serial_nodes, close_buses
+    from lib.devices import CookerDevice as _Cooker, PlatingArmDevice as _Plater
+    from lib.devices import IngredientDevice as _Ingredient, CutterDevice as _Cutter
+
+    display = SSD1306Display()
+    buses = open_serial_nodes(cooker_port, plater_port, ingredient_port, cutter_port)
+    try:
+        cooker     = _Cooker(buses["cooker"])
+        plater     = _Plater(buses["plating"])
+        ingredient = _Ingredient(buses["ingredient"])
+        cutter     = _Cutter(buses["cutter"])
+
+        devices = [cooker, plater, ingredient, cutter]
+        results = probe_all(devices)
+        online  = {d for d, ok in results.items() if ok}
+        offline = set(devices) - online
+
+        if offline:
+            names = ", ".join(d.name for d in offline)
+            logger.warning("offline devices will be skipped: %s", names)
+
+        server.init(cooker, plater, ingredient, cutter, display)
+        server.start()
+        display.set_state(MachineState.IDLE)
+
+        if online and run_demo_on_start:
+            demo(cooker, plater, ingredient, cutter, online)
+        elif online:
+            logger.info("startup demo disabled — waiting for explicit commands")
+        else:
+            logger.warning("no devices found — running headless (API still available)")
+
+        logger.info("serving — Ctrl-C to quit")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            logger.info("shutting down")
+    finally:
+        close_buses(buses)
+
+
 def main_serial(cooker_port, plater_port, ingredient_port, cutter_port, run_demo_on_start: bool = False):
     display = SSD1306Display()
     buses = [
@@ -213,6 +259,14 @@ def main():
         port = sys.argv[idx + 1] if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("--") else "/dev/ttyUSB0"
         logger.info("mode: RS485  port=%s", port)
         main_rs485(port=port, run_demo_on_start=run_demo_on_start)
+    elif "--serial-nodes" in sys.argv:
+        ports = [a for a in sys.argv if a.startswith('/dev/') or a.startswith('COM')]
+        if len(ports) < 4:
+            logger.error("serial-nodes mode requires 4 ports: cooker plating ingredient cutter")
+            logger.error("  python master.py --serial-nodes /dev/ttyUSB0 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3")
+            sys.exit(1)
+        logger.info("mode: serial-nodes  ports=%s", ports[:4])
+        main_serial_nodes(*ports[:4], run_demo_on_start=run_demo_on_start)
     elif "--serial" in sys.argv:
         ports = [a for a in sys.argv if a.startswith('/dev/') or a.startswith('COM')]
         if len(ports) < 4:

@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <RS485Node.h>
+#include <SerialFrameHandler.h>
 
 // Ingredient stepper node — RS485 node 0x44
 //
@@ -74,7 +75,8 @@ Motor motorB = { IDLE, 0, 0 };
 uint8_t  pending_cmd   = 0;
 uint16_t set_steps_rev = 1600;  // 1/8 microstepping — tweak until one vend = one revolution
 
-RS485Node node(0x44, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
+RS485Node          node(0x44, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
+SerialFrameHandler serial_handler(0x44);
 
 // ── Motor helpers ──────────────────────────────────────────
 void enableA()  { digitalWrite(A_ENA, LOW); }
@@ -200,11 +202,16 @@ void setup() {
   node.begin();
   node.setDefaultReadHandler(processRead);
   node.setDefaultWriteHandler(processWrite);
+
+  serial_handler.setDefaultReadHandler(processRead);
+  serial_handler.setDefaultWriteHandler(processWrite);
+
   Serial.println("[ingredient] RS485 node 0x44 ready");
 }
 
 void loop() {
   node.poll();
+  serial_handler.poll(Serial);
 
   if (pending_cmd) {
     handleCommand(pending_cmd);

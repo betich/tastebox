@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <RS485Node.h>
+#include <SerialFrameHandler.h>
 #include <Servo.h>
 
 // Cutter node — RS485 node 0x45
@@ -57,7 +58,8 @@ unsigned long salt_start   = 0;
 bool          salt_timed   = false;
 
 Servo door_srv, clamp_srv, pepper_srv, pump_srv, salt_srv;
-RS485Node node(0x45, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
+RS485Node          node(0x45, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
+SerialFrameHandler serial_handler(0x45);
 
 // ── Register handlers ──────────────────────────────────────
 uint8_t processRead(uint8_t reg) {
@@ -135,10 +137,15 @@ void setup() {
   node.begin();
   node.setDefaultReadHandler(processRead);
   node.setDefaultWriteHandler(processWrite);
+
+  serial_handler.setDefaultReadHandler(processRead);
+  serial_handler.setDefaultWriteHandler(processWrite);
+
   Serial.println("[cutter] RS485 node 0x45 ready");
 }
 
 void loop() {
   node.poll();
+  serial_handler.poll(Serial);
   updateTimers();
 }
