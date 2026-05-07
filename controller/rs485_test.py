@@ -9,24 +9,20 @@ import serial
 
 UART_PORT = "/dev/ttyAMA0"
 BAUD = 9600
-PIN_DE = 23
-PIN_RE = 24
+PIN_DE_RE = 23  # DE and RE bridged to single GPIO
 PING_INTERVAL = 2.0
 READ_TIMEOUT = 1.0
 
 
 def _setup():
     GPIO.setmode(GPIO.BCM)
-    GPIO.setup(PIN_DE, GPIO.OUT, initial=GPIO.LOW)
-    GPIO.setup(PIN_RE, GPIO.OUT, initial=GPIO.LOW)
+    GPIO.setup(PIN_DE_RE, GPIO.OUT, initial=GPIO.LOW)
     ser = serial.Serial(UART_PORT, BAUD, timeout=READ_TIMEOUT)
     return ser
 
 
 def _tx_enable(enabled: bool):
-    level = GPIO.HIGH if enabled else GPIO.LOW
-    GPIO.output(PIN_DE, level)
-    GPIO.output(PIN_RE, level)
+    GPIO.output(PIN_DE_RE, GPIO.HIGH if enabled else GPIO.LOW)
 
 
 def _send(ser: serial.Serial, message: str):

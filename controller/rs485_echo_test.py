@@ -6,12 +6,10 @@ import serial
 
 UART_PORT = "/dev/ttyAMA0"
 BAUD = 9600
-PIN_DE = 23
-PIN_RE = 24
+PIN_DE_RE = 23  # DE and RE bridged to single GPIO
 
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(PIN_DE, GPIO.OUT, initial=GPIO.LOW)
-GPIO.setup(PIN_RE, GPIO.OUT, initial=GPIO.LOW)  # RE LOW = receiver always on
+GPIO.setup(PIN_DE_RE, GPIO.OUT, initial=GPIO.LOW)
 
 ser = serial.Serial(UART_PORT, BAUD, timeout=1.0)
 print(f"MAX485 self-echo test on {UART_PORT}")
@@ -22,14 +20,14 @@ try:
         msg = f"HELLO{i}\n"
         ser.reset_input_buffer()
 
-        GPIO.output(PIN_DE, GPIO.HIGH)   # enable driver
+        GPIO.output(PIN_DE_RE, GPIO.HIGH)   # enable driver
         data = msg.encode()
         ser.write(data)
         ser.flush()
         # Hold DE until all bytes have left the UART shift register.
         # 10 bits per byte (start + 8 data + stop) at 9600 baud + 2 ms margin.
         time.sleep(len(data) * 10 / BAUD + 0.005)
-        GPIO.output(PIN_DE, GPIO.LOW)    # release bus
+        GPIO.output(PIN_DE_RE, GPIO.LOW)    # release bus
 
         echo = ser.read(len(data)).decode(errors="replace")
         if echo == msg:
