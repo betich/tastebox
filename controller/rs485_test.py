@@ -14,6 +14,7 @@ READ_TIMEOUT = 1.0
 
 def run():
     ser = serial.Serial(UART_PORT, BAUD, timeout=READ_TIMEOUT)
+    ser.rts = True  # assert RTS to enable DE on adapters that require it
 
     def _cleanup(_sig=None, _frame=None):
         ser.close()
