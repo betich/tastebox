@@ -11,7 +11,7 @@ interface StatusData {
   ok: boolean
   cooker?:     { online: boolean; on: boolean; position: number }
   plating?:    { online: boolean; m1_busy: boolean; m2_busy: boolean; m1_pos: number; arm: number; lid: number; lid_busy: boolean }
-  ingredient?: { online: boolean; busy: boolean; remaining_ms: number }
+  ingredient?: { online: boolean; a_busy: boolean; b_busy: boolean; c_busy: boolean }
   cutter?:     { online: boolean; door_busy: boolean; clamp_busy: boolean; roller_busy: boolean; scissor_busy: boolean }
 }
 
@@ -75,6 +75,11 @@ export async function action({ request }: ActionFunctionArgs) {
       if (command === "b_dispense") await post("/ingredient/b/dispense")
       if (command === "b_retract")  await post("/ingredient/b/retract")
       if (command === "b_stop")     await post("/ingredient/b/stop")
+      if (command === "c_fwd")      await post("/ingredient/c/fwd")
+      if (command === "c_bwd")      await post("/ingredient/c/bwd")
+      if (command === "c_dispense") await post("/ingredient/c/dispense")
+      if (command === "c_retract")  await post("/ingredient/c/retract")
+      if (command === "c_stop")     await post("/ingredient/c/stop")
       if (command === "stop")       await post("/ingredient/stop")
       if (command === "set_rev")    await post("/ingredient/revolutions", { steps: Math.round(value) })
     } else if (device === "cutter") {
@@ -93,6 +98,11 @@ export async function action({ request }: ActionFunctionArgs) {
       if (command === "pump_off")        await post("/cutter/pump",    { action: "off" })
       if (command === "salt_dispense")   await post("/cutter/salt",    { action: "dispense" })
     } else if (device === "system") {
+      if (command === "ping") {
+        const res  = await fetch(`${API}/ping`, { signal: AbortSignal.timeout(5000) })
+        const data = await res.json()
+        return { ok: true, ping: data }
+      }
       if (command === "set_state")
         await post("/state", { state: form.get("state_name") as string })
     }
@@ -305,8 +315,9 @@ function StatusRow({ status, device }: { status: StatusData | null; device: Devi
     const d = data as NonNullable<StatusData["ingredient"]>
     return (
       <div className="flex gap-6 text-[18px] text-neutral-300 font-mono">
-        <span>busy <strong className={d.busy ? "text-yellow-400" : "text-neutral-500"}>{d.busy ? "yes" : "no"}</strong></span>
-        <span>rem <strong className="text-white">{d.remaining_ms}ms</strong></span>
+        <span>A <strong className={d.a_busy ? "text-yellow-400" : "text-neutral-500"}>{d.a_busy ? "busy" : "idle"}</strong></span>
+        <span>B <strong className={d.b_busy ? "text-yellow-400" : "text-neutral-500"}>{d.b_busy ? "busy" : "idle"}</strong></span>
+        <span>C <strong className={d.c_busy ? "text-yellow-400" : "text-neutral-500"}>{d.c_busy ? "busy" : "idle"}</strong></span>
       </div>
     )
   }
@@ -362,7 +373,7 @@ function DeviceStatusGrid({ status }: { status: StatusData | null }) {
       <DeviceCard id="plating"    addr="RS485 #02" ctrlOnline={ctrlOnline} detected={p?.online ?? false}
         detail={p?.online ? `pan ${p.m1_pos} · arm ${ARM_LABELS[p.arm] ?? p.arm} · lid ${["closed","open","moving"][p.lid] ?? p.lid}` : undefined} />
       <DeviceCard id="ingredient" addr="RS485 #03" ctrlOnline={ctrlOnline} detected={i?.online ?? false}
-        detail={i?.online ? `${i.busy ? "busy" : "idle"} · ${i.remaining_ms}ms rem` : undefined} />
+        detail={i?.online ? `A:${i.a_busy?"busy":"idle"} B:${i.b_busy?"busy":"idle"} C:${i.c_busy?"busy":"idle"}` : undefined} />
       <DeviceCard id="cutter"     addr="RS485 #04" ctrlOnline={ctrlOnline} detected={x?.online ?? false}
         detail={x?.online ? `door:${x.door_busy?"busy":"idle"} clamp:${x.clamp_busy?"busy":"idle"} roller:${x.roller_busy?"busy":"idle"}` : undefined} />
     </div>
@@ -390,6 +401,7 @@ export default function Admin() {
   const navigate      = useNavigate()
   const cmdFetcher    = useFetcher()
   const statusFetcher = useFetcher<typeof loader>()
+  const pingFetcher   = useFetcher<typeof action>()
 
   // Poll status every 2 s
   useEffect(() => {
@@ -399,6 +411,8 @@ export default function Admin() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const statusData = statusFetcher.data?.status ?? null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pingNodes  = (pingFetcher.data as any)?.ping?.nodes ?? null
 
   const send = useCallback((command: string, value: number = 0) => {
     cmdFetcher.submit(
@@ -554,6 +568,16 @@ export default function Admin() {
               <div className={`w-3 h-3 rounded-full ${gpConnected ? "bg-blue-400" : "bg-neutral-400"}`} />
               <span className="text-[20px] text-neutral-500">{gpConnected ? "gamepad" : "no gamepad"}</span>
             </div>
+            <button
+              onClick={() => pingFetcher.submit(
+                { device: "system", command: "ping", value: "0" },
+                { method: "POST", action: "/admin" },
+              )}
+              disabled={pingFetcher.state !== "idle"}
+              className="px-6 py-2 rounded-xl bg-neutral-800 text-white text-[20px] font-semibold active:bg-neutral-600 disabled:opacity-50"
+            >
+              {pingFetcher.state !== "idle" ? "Pinging…" : "Ping All"}
+            </button>
             <div className="flex items-center gap-3">
               <div className={`w-4 h-4 rounded-full ${statusData?.ok ? "bg-green-400" : "bg-red-400"}`} />
               <span className="text-[24px] text-neutral-500">{statusData?.ok ? "online" : "offline"}</span>
@@ -563,6 +587,23 @@ export default function Admin() {
 
         {/* Device status grid */}
         <DeviceStatusGrid status={statusData} />
+
+        {/* Ping results */}
+        {pingNodes && (
+          <div className="bg-neutral-800 rounded-2xl px-8 py-4 flex gap-10">
+            {Object.entries(pingNodes).map(([name, r]: [string, unknown]) => {
+              const node = r as { online: boolean; ms: number | null }
+              return (
+                <span key={name} className="font-mono text-[18px]">
+                  <span className="text-neutral-400">{name}</span>{" "}
+                  <strong className={node.online ? "text-green-400" : "text-red-400"}>
+                    {node.online ? `${node.ms}ms` : "✗"}
+                  </strong>
+                </span>
+              )
+            })}
+          </div>
+        )}
 
         {/* Device selector */}
         <div className="flex gap-4">
@@ -598,6 +639,24 @@ export default function Admin() {
           <Joystick label={lStickLabel[device]} onValue={setLVal} onCommit={handleLCommit} description={lStickDesc[device]} />
           <Joystick label={rStickLabel[device]} onValue={setRVal} onCommit={handleRCommit} description={rStickDesc[device]} />
         </div>
+
+        {/* Ingredient C motor controls */}
+        {device === "ingredient" && (
+          <div className="px-4">
+            <p className="text-[20px] text-neutral-500 mb-4">Motor C</p>
+            <div className="flex gap-4 flex-wrap">
+              {(["c_fwd", "c_bwd", "c_dispense", "c_retract", "c_stop"] as const).map((cmd) => (
+                <button
+                  key={cmd}
+                  onClick={() => send(cmd)}
+                  className="px-6 py-3 rounded-xl bg-neutral-200 text-neutral-700 text-[20px] font-semibold active:bg-neutral-400"
+                >
+                  {cmd === "c_fwd" ? "C Fwd" : cmd === "c_bwd" ? "C Bwd" : cmd === "c_dispense" ? "C Dispense" : cmd === "c_retract" ? "C Retract" : "C Stop"}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Cutter dispenser buttons */}
         {device === "cutter" && (

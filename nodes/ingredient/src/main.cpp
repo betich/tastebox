@@ -4,8 +4,9 @@
 
 // Ingredient stepper node — RS485 node 0x44
 //
-// Stepper A: PUL→D2,  DIR→D3,  ENA→D4   (DIR inverted vs B)
+// Stepper A: PUL→D2,  DIR→D3,  ENA→D4
 // Stepper B: PUL→D13, DIR→D12, ENA→D11
+// Stepper C: PUL→D8,  DIR→D9,  ENA→D10
 //
 // Commands (write REG_CMD 0x10):
 //   0x01  STOP_ALL
@@ -19,12 +20,18 @@
 //   0x09  B_RETRACT     — B one revolution backward
 //   0x0A  STOP_A
 //   0x0B  STOP_B
+//   0x0C  C_FWD_CONT    — C non-stop forward
+//   0x0D  C_BWD_CONT    — C non-stop backward
+//   0x0E  C_DISPENSE    — C one revolution forward
+//   0x0F  C_RETRACT     — C one revolution backward
+//   0x10  STOP_C
 //
 // Registers:
 //   R 0x00  status A  (bit0=busy, bit1=bwd)
 //   R 0x01  status B  (bit0=busy, bit1=bwd)
+//   R 0x02  status C  (bit0=busy, bit1=bwd)
 //   W 0x10  command
-//   W 0x11+0x12  steps per revolution (uint16 hi-lo, default 200)
+//   W 0x11+0x12  steps per revolution (uint16 hi-lo, default 1600)
 
 // ── Pins ───────────────────────────────────────────────────
 #define A_PUL  2
@@ -35,6 +42,10 @@
 #define B_DIR  12
 #define B_ENA  11
 
+#define C_PUL  8
+#define C_DIR  9
+#define C_ENA  10
+
 #define STEP_HALF_US  800   // µs per half-pulse (~625 Hz)
 
 // ── RS485 ───────────────────────────────────────────────────
@@ -44,6 +55,7 @@
 
 #define REG_STATUS_A  0x00
 #define REG_STATUS_B  0x01
+#define REG_STATUS_C  0x02
 #define REG_CMD       0x10
 #define REG_REV_HI    0x11
 #define REG_REV_LO    0x12
@@ -59,6 +71,11 @@
 #define CMD_B_RETRACT   0x09
 #define CMD_STOP_A      0x0A
 #define CMD_STOP_B      0x0B
+#define CMD_C_FWD_CONT  0x0C
+#define CMD_C_BWD_CONT  0x0D
+#define CMD_C_DISPENSE  0x0E
+#define CMD_C_RETRACT   0x0F
+#define CMD_STOP_C      0x10
 
 // ── Motor state ────────────────────────────────────────────
 enum RunMode : uint8_t { IDLE, CONTINUOUS, REVOLUTION };
@@ -71,6 +88,7 @@ struct Motor {
 
 Motor motorA = { IDLE, 0, 0 };
 Motor motorB = { IDLE, 0, 0 };
+Motor motorC = { IDLE, 0, 0 };
 
 uint8_t  pending_cmd   = 0;
 uint16_t set_steps_rev = 1600;  // 1/8 microstepping — tweak until one vend = one revolution
@@ -83,13 +101,12 @@ void enableA()  { digitalWrite(A_ENA, LOW); }
 void disableA() { digitalWrite(A_ENA, HIGH); }
 void enableB()  { digitalWrite(B_ENA, LOW); }
 void disableB() { digitalWrite(B_ENA, HIGH); }
+void enableC()  { digitalWrite(C_ENA, LOW); }
+void disableC() { digitalWrite(C_ENA, HIGH); }
 
-void setDirA(bool bwd) {
-  digitalWrite(A_DIR, bwd ? LOW : HIGH);
-}
-void setDirB(bool bwd) {
-  digitalWrite(B_DIR, bwd ? LOW : HIGH);
-}
+void setDirA(bool bwd) { digitalWrite(A_DIR, bwd ? LOW : HIGH); }
+void setDirB(bool bwd) { digitalWrite(B_DIR, bwd ? LOW : HIGH); }
+void setDirC(bool bwd) { digitalWrite(C_DIR, bwd ? LOW : HIGH); }
 
 void startMotor(Motor& m, bool bwd, RunMode mode,
                 void (*ena)(), void (*setDir)(bool)) {
@@ -113,6 +130,7 @@ uint8_t processRead(uint8_t reg) {
   switch (reg) {
     case REG_STATUS_A: return motorA.status;
     case REG_STATUS_B: return motorB.status;
+    case REG_STATUS_C: return motorC.status;
     default:           return 0xFF;
   }
 }
@@ -132,6 +150,7 @@ void handleCommand(uint8_t cmd) {
     case CMD_STOP_ALL:
       stopMotor(motorA, disableA);
       stopMotor(motorB, disableB);
+      stopMotor(motorC, disableC);
       Serial.println("[CMD] stop all");
       break;
     case CMD_STOP_A:
@@ -174,19 +193,26 @@ void handleCommand(uint8_t cmd) {
       startMotor(motorB, false, REVOLUTION, enableB, setDirB);
       Serial.print("[CMD] B retract "); Serial.print(set_steps_rev); Serial.println(" steps");
       break;
-  }
-}
-
-// ── Step one motor (call only when its turn to pulse) ──────
-void stepIf(bool active, uint8_t pul_pin, Motor& m, void (*dis)()) {
-  if (!active) return;
-  digitalWrite(pul_pin, HIGH);
-  delayMicroseconds(STEP_HALF_US);
-  digitalWrite(pul_pin, LOW);
-  delayMicroseconds(STEP_HALF_US);
-  if (m.mode == REVOLUTION) {
-    if (m.steps_left > 0) m.steps_left--;
-    if (m.steps_left == 0) stopMotor(m, dis);
+    case CMD_STOP_C:
+      stopMotor(motorC, disableC);
+      Serial.println("[CMD] stop C");
+      break;
+    case CMD_C_FWD_CONT:
+      startMotor(motorC, false, CONTINUOUS, enableC, setDirC);
+      Serial.println("[CMD] C fwd cont");
+      break;
+    case CMD_C_BWD_CONT:
+      startMotor(motorC, true,  CONTINUOUS, enableC, setDirC);
+      Serial.println("[CMD] C bwd cont");
+      break;
+    case CMD_C_DISPENSE:
+      startMotor(motorC, true,  REVOLUTION, enableC, setDirC);
+      Serial.print("[CMD] C dispense "); Serial.print(set_steps_rev); Serial.println(" steps");
+      break;
+    case CMD_C_RETRACT:
+      startMotor(motorC, false, REVOLUTION, enableC, setDirC);
+      Serial.print("[CMD] C retract "); Serial.print(set_steps_rev); Serial.println(" steps");
+      break;
   }
 }
 
@@ -194,9 +220,11 @@ void stepIf(bool active, uint8_t pul_pin, Motor& m, void (*dis)()) {
 void setup() {
   pinMode(A_PUL, OUTPUT); pinMode(A_DIR, OUTPUT); pinMode(A_ENA, OUTPUT);
   pinMode(B_PUL, OUTPUT); pinMode(B_DIR, OUTPUT); pinMode(B_ENA, OUTPUT);
+  pinMode(C_PUL, OUTPUT); pinMode(C_DIR, OUTPUT); pinMode(C_ENA, OUTPUT);
   digitalWrite(A_PUL, LOW); digitalWrite(A_DIR, LOW);
   digitalWrite(B_PUL, LOW); digitalWrite(B_DIR, LOW);
-  disableA(); disableB();
+  digitalWrite(C_PUL, LOW); digitalWrite(C_DIR, LOW);
+  disableA(); disableB(); disableC();
 
   Serial.begin(115200);
   node.begin();
@@ -220,23 +248,29 @@ void loop() {
 
   bool a = (motorA.mode != IDLE);
   bool b = (motorB.mode != IDLE);
+  bool c = (motorC.mode != IDLE);
 
-  if (a && b) {
-    // Both running — pulse simultaneously
-    digitalWrite(A_PUL, HIGH); digitalWrite(B_PUL, HIGH);
+  if (a || b || c) {
+    // Pulse all active motors simultaneously in one delay window
+    if (a) digitalWrite(A_PUL, HIGH);
+    if (b) digitalWrite(B_PUL, HIGH);
+    if (c) digitalWrite(C_PUL, HIGH);
     delayMicroseconds(STEP_HALF_US);
-    digitalWrite(A_PUL, LOW);  digitalWrite(B_PUL, LOW);
+    if (a) digitalWrite(A_PUL, LOW);
+    if (b) digitalWrite(B_PUL, LOW);
+    if (c) digitalWrite(C_PUL, LOW);
     delayMicroseconds(STEP_HALF_US);
-    if (motorA.mode == REVOLUTION) {
+    if (a && motorA.mode == REVOLUTION) {
       if (motorA.steps_left > 0) motorA.steps_left--;
       if (motorA.steps_left == 0) stopMotor(motorA, disableA);
     }
-    if (motorB.mode == REVOLUTION) {
+    if (b && motorB.mode == REVOLUTION) {
       if (motorB.steps_left > 0) motorB.steps_left--;
       if (motorB.steps_left == 0) stopMotor(motorB, disableB);
     }
-  } else {
-    stepIf(a, A_PUL, motorA, disableA);
-    stepIf(b, B_PUL, motorB, disableB);
+    if (c && motorC.mode == REVOLUTION) {
+      if (motorC.steps_left > 0) motorC.steps_left--;
+      if (motorC.steps_left == 0) stopMotor(motorC, disableC);
+    }
   }
 }

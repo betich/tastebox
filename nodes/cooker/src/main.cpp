@@ -6,8 +6,7 @@
 #define ENC_E  2   // orange - encoder A
 #define ENC_D  3   // blue   - encoder B
 #define ENC_C  9   // yellow - click/button  (moved from D4 to free D9)
-#define BUZ    10  // green  - buzzer state (input)  (moved from D5 to free D10)
-#define BEEP   8   // buzzer output
+#define BUZ    8   // buzzer output
 
 // RS-485 (SoftwareSerial)
 #define PIN_RS485_RX    4
@@ -60,13 +59,9 @@ void click() {
 }
 
 void beep() {
-  digitalWrite(BEEP, LOW);
+  digitalWrite(BUZ, LOW);
   delay(50);
-  digitalWrite(BEEP, HIGH);
-}
-
-bool isCooktopOn() {
-  return digitalRead(BUZ) == HIGH;
+  digitalWrite(BUZ, HIGH);
 }
 
 // ── State ────────────────────────────────────────────────────
@@ -83,7 +78,7 @@ uint8_t processRead(uint8_t reg) {
   switch (reg) {
     case REG_POS_HI: return (uint8_t)(currentPos >> 8);
     case REG_POS_LO: return (uint8_t)(currentPos & 0xFF);
-    case REG_SW:     return isCooktopOn() ? 1 : 0;
+    case REG_SW:     return 0;
     case REG_EVT: {
       uint8_t f = eventFlags;
       eventFlags = 0;
@@ -113,8 +108,7 @@ void setup() {
   pinMode(ENC_E, OUTPUT); digitalWrite(ENC_E, LOW);
   pinMode(ENC_D, OUTPUT); digitalWrite(ENC_D, LOW);
   pinMode(ENC_C, OUTPUT); digitalWrite(ENC_C, LOW);
-  pinMode(BUZ,   INPUT);
-  pinMode(BEEP,  OUTPUT); digitalWrite(BEEP, HIGH);  // idle HIGH (active-low)
+  pinMode(BUZ, OUTPUT); digitalWrite(BUZ, HIGH);  // idle HIGH (active-low)
 
   node.begin();
   node.setDefaultReadHandler(processRead);
@@ -156,10 +150,4 @@ void loop() {
     Serial.print(" -> pos="); Serial.println(currentPos);
   }
 
-  static bool lastBuz = false;
-  bool buz = isCooktopOn();
-  if (buz != lastBuz) {
-    lastBuz = buz;
-    Serial.print("[BUZ] "); Serial.println(buz ? "ON" : "OFF");
-  }
 }

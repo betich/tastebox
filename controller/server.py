@@ -5,6 +5,7 @@ Start via server.start() from master.py; runs in a daemon thread.
 """
 import logging
 import threading
+import time
 from flask import Flask, jsonify, request
 
 from display import SSD1306Display, MachineState
@@ -93,9 +94,10 @@ def status():
                 "lid_busy":  _plater.is_lid_busy()      if plater_ok else False,
             }
             ing_data = {
-                "online":       ing_ok,
-                "busy":         _ingredient.is_busy()         if ing_ok else False,
-                "remaining_ms": _ingredient.get_remaining_ms() if ing_ok else 0,
+                "online": ing_ok,
+                "a_busy": _ingredient.is_busy_a() if ing_ok else False,
+                "b_busy": _ingredient.is_busy_b() if ing_ok else False,
+                "c_busy": _ingredient.is_busy_c() if ing_ok else False,
             }
             cutter_data = {
                 "online": cutter_ok,
@@ -247,6 +249,21 @@ def ingredient_b_retract():  return _safe(lambda: _ingredient.b_retract()  or {}
 @app.route("/ingredient/b/stop",     methods=["POST"])
 def ingredient_b_stop():     return _safe(lambda: _ingredient.stop_b()     or {})
 
+@app.route("/ingredient/c/fwd",      methods=["POST"])
+def ingredient_c_fwd():      return _safe(lambda: _ingredient.c_fwd()      or {})
+
+@app.route("/ingredient/c/bwd",      methods=["POST"])
+def ingredient_c_bwd():      return _safe(lambda: _ingredient.c_bwd()      or {})
+
+@app.route("/ingredient/c/dispense", methods=["POST"])
+def ingredient_c_dispense(): return _safe(lambda: _ingredient.c_dispense() or {})
+
+@app.route("/ingredient/c/retract",  methods=["POST"])
+def ingredient_c_retract():  return _safe(lambda: _ingredient.c_retract()  or {})
+
+@app.route("/ingredient/c/stop",     methods=["POST"])
+def ingredient_c_stop():     return _safe(lambda: _ingredient.stop_c()     or {})
+
 @app.route("/ingredient/stop",       methods=["POST"])
 def ingredient_stop():       return _safe(lambda: _ingredient.stop()       or {})
 
@@ -255,13 +272,6 @@ def ingredient_revolutions():
     data  = request.get_json() or {}
     steps = int(data.get("steps", 200))
     return _safe(lambda: _ingredient.set_steps_per_rev(steps) or {})
-
-
-@app.route("/ingredient/duration", methods=["POST"])
-def ingredient_duration():
-    data = request.get_json() or {}
-    ms   = int(data.get("ms", 1000))
-    return _safe(lambda: _ingredient.set_duration(ms) or {})
 
 
 # ── cutter (0x45) ─────────────────────────────────────────────────────────────
@@ -342,3 +352,23 @@ def cutter_salt():
 def cutter_duration():
     ms = int((request.get_json() or {}).get("ms", 1000))
     return _safe(lambda: _cutter.set_duration(ms) or {})
+
+
+# ── health ping ───────────────────────────────────────────────────────────────
+
+@app.route("/ping")
+def ping():
+    devices = [
+        ("cooker",     _cooker),
+        ("plating",    _plater),
+        ("ingredient", _ingredient),
+        ("cutter",     _cutter),
+    ]
+    results = {}
+    with _lock:
+        for name, dev in devices:
+            t0 = time.monotonic()
+            ok = dev.ping()
+            elapsed_ms = round((time.monotonic() - t0) * 1000)
+            results[name] = {"online": ok, "ms": elapsed_ms if ok else None}
+    return jsonify({"ok": True, "nodes": results})

@@ -1,4 +1,5 @@
 import threading
+import time
 import serial
 from .protocol import encode_read, encode_write, decode_response
 from .interceptor import CommandInterceptor
@@ -35,6 +36,25 @@ class RS485Bus:
     def add_interceptor(self, interceptor: CommandInterceptor):
         self._interceptors.append(interceptor)
 
+    def _readline_valid(self, addr: int) -> str:
+        """Read lines until we get one addressed to addr that isn't an echo of our own frame."""
+        deadline = self._timeout * (self._retries + 1) + 0.05
+        t0 = time.monotonic()
+        while (time.monotonic() - t0) < deadline:
+            raw = self._ser.readline().decode(errors="ignore")
+            if not raw:
+                break
+            prefix = f"@{addr:02X} "
+            if not raw.startswith(prefix):
+                continue
+            # Skip echo: echoed read frames look like "@NN R RR\n"
+            # echoed write frames look like "@NN W RR DD\n"
+            parts = raw.split()
+            if len(parts) >= 2 and parts[1] in ("R", "W"):
+                continue
+            return raw
+        return ""
+
     def read_byte(self, addr: int, reg: int) -> int:
         for ic in self._interceptors:
             ic.before_read(addr, reg)
@@ -44,8 +64,8 @@ class RS485Bus:
             with self._lock:
                 self._ser.reset_input_buffer()
                 self._ser.write(encode_read(addr, reg))
-                raw = self._ser.readline().decode(errors="ignore")
-            if raw.startswith(f"@{addr:02X}"):
+                raw = self._readline_valid(addr)
+            if raw:
                 val = decode_response(raw)
                 if isinstance(val, int):
                     for ic in self._interceptors:
@@ -64,8 +84,8 @@ class RS485Bus:
             with self._lock:
                 self._ser.reset_input_buffer()
                 self._ser.write(encode_write(addr, reg, *payload))
-                raw = self._ser.readline().decode(errors="ignore")
-            if raw.startswith(f"@{addr:02X}"):
+                raw = self._readline_valid(addr)
+            if raw:
                 result = decode_response(raw)
                 if result == "OK":
                     for ic in self._interceptors:
