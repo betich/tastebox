@@ -589,7 +589,11 @@ export default function Admin() {
   const sub    = subs[subIdx]
   const sticks = STICK_USE[device]
 
+  const lastSendMs = useRef(0)
   const send = useCallback((command: string, value: number = 0) => {
+    const now = Date.now()
+    if (now - lastSendMs.current < 250) return
+    lastSendMs.current = now
     cmdFetcher.submit(
       { device, command, value: String(value) },
       { method: "POST", action: "/admin" },

@@ -237,21 +237,23 @@ void setup() {
   Serial.println("[ingredient] RS485 node 0x44 ready");
 }
 
-void loop() {
+void pollAndDispatch() {
   node.poll();
   serial_handler.poll(Serial);
-
   if (pending_cmd) {
     handleCommand(pending_cmd);
     pending_cmd = 0;
   }
+}
+
+void loop() {
+  pollAndDispatch();
 
   bool a = (motorA.mode != IDLE);
   bool b = (motorB.mode != IDLE);
   bool c = (motorC.mode != IDLE);
 
   if (a || b || c) {
-    // Pulse all active motors simultaneously in one delay window
     if (a) digitalWrite(A_PUL, HIGH);
     if (b) digitalWrite(B_PUL, HIGH);
     if (c) digitalWrite(C_PUL, HIGH);
@@ -260,6 +262,7 @@ void loop() {
     if (b) digitalWrite(B_PUL, LOW);
     if (c) digitalWrite(C_PUL, LOW);
     delayMicroseconds(STEP_HALF_US);
+
     if (a && motorA.mode == REVOLUTION) {
       if (motorA.steps_left > 0) motorA.steps_left--;
       if (motorA.steps_left == 0) stopMotor(motorA, disableA);
@@ -272,5 +275,8 @@ void loop() {
       if (motorC.steps_left > 0) motorC.steps_left--;
       if (motorC.steps_left == 0) stopMotor(motorC, disableC);
     }
+
+    // Poll between steps so STOP commands aren't delayed by the full revolution
+    pollAndDispatch();
   }
 }
