@@ -15,6 +15,189 @@ interface StatusData {
   cutter?:     { online: boolean; door_busy: boolean; clamp_busy: boolean; roller_busy: boolean; scissor_busy: boolean }
 }
 
+type SubAction    = { label: string; command: string; value?: number }
+type FaceMap      = Partial<Record<"a" | "b" | "x" | "y", SubAction>>
+type SubComponent = { id: string; label: string; actions: SubAction[]; face: FaceMap }
+
+// ── Device config ─────────────────────────────────────────────────────────────
+
+const DEVICES: Device[] = ["cooker", "plating", "ingredient", "cutter"]
+
+const DEVICE_CONFIG: Record<Device, SubComponent[]> = {
+  cooker: [{
+    id: "control", label: "Control",
+    actions: [
+      { label: "Click",  command: "click"           },
+      { label: "Reset",  command: "reset"           },
+      { label: "+1 pos", command: "position_delta", value:  1 },
+      { label: "−1 pos", command: "position_delta", value: -1 },
+    ],
+    face: {
+      a: { label: "Click",  command: "click"           },
+      b: { label: "Reset",  command: "reset"           },
+      x: { label: "+1 pos", command: "position_delta", value:  1 },
+      y: { label: "−1 pos", command: "position_delta", value: -1 },
+    },
+  }],
+
+  plating: [
+    {
+      id: "arm", label: "Arm",
+      actions: [
+        { label: "Dispense", command: "dispense" },
+        { label: "Retract",  command: "retract"  },
+        { label: "Fwd",      command: "fwd_cont" },
+        { label: "Bwd",      command: "bwd_cont" },
+        { label: "Stop",     command: "stop_arm" },
+      ],
+      face: {
+        a: { label: "Dispense", command: "dispense" },
+        b: { label: "Retract",  command: "retract"  },
+        x: { label: "Fwd",      command: "fwd_cont" },
+        y: { label: "Stop",     command: "stop_arm" },
+      },
+    },
+    {
+      id: "lid", label: "Lid",
+      actions: [
+        { label: "Open",  command: "lid_open"  },
+        { label: "Close", command: "lid_close" },
+        { label: "Fwd",   command: "lid_fwd"   },
+        { label: "Bwd",   command: "lid_bwd"   },
+        { label: "Stop",  command: "stop_lid"  },
+      ],
+      face: {
+        a: { label: "Open",  command: "lid_open"  },
+        b: { label: "Close", command: "lid_close" },
+        x: { label: "Fwd",   command: "lid_fwd"   },
+        y: { label: "Stop",  command: "stop_lid"  },
+      },
+    },
+    {
+      id: "pan", label: "Pan",
+      actions: [
+        { label: "Home", command: "home_pan"                },
+        { label: "+10",  command: "move_pan", value:   10   },
+        { label: "−10",  command: "move_pan", value:  -10   },
+      ],
+      face: {
+        a: { label: "Home", command: "home_pan"              },
+        x: { label: "+10",  command: "move_pan", value:  10  },
+        y: { label: "−10",  command: "move_pan", value: -10  },
+      },
+    },
+  ],
+
+  ingredient: [
+    {
+      id: "a", label: "Motor A",
+      actions: [
+        { label: "Fwd",      command: "a_fwd"      },
+        { label: "Bwd",      command: "a_bwd"      },
+        { label: "Dispense", command: "a_dispense" },
+        { label: "Retract",  command: "a_retract"  },
+        { label: "Stop",     command: "a_stop"     },
+      ],
+      face: {
+        a: { label: "Dispense", command: "a_dispense" },
+        b: { label: "Retract",  command: "a_retract"  },
+        x: { label: "Fwd",      command: "a_fwd"      },
+        y: { label: "Stop",     command: "a_stop"     },
+      },
+    },
+    {
+      id: "b", label: "Motor B",
+      actions: [
+        { label: "Fwd",      command: "b_fwd"      },
+        { label: "Bwd",      command: "b_bwd"      },
+        { label: "Dispense", command: "b_dispense" },
+        { label: "Retract",  command: "b_retract"  },
+        { label: "Stop",     command: "b_stop"     },
+      ],
+      face: {
+        a: { label: "Dispense", command: "b_dispense" },
+        b: { label: "Retract",  command: "b_retract"  },
+        x: { label: "Fwd",      command: "b_fwd"      },
+        y: { label: "Stop",     command: "b_stop"     },
+      },
+    },
+    {
+      id: "c", label: "Motor C",
+      actions: [
+        { label: "Fwd",      command: "c_fwd"      },
+        { label: "Bwd",      command: "c_bwd"      },
+        { label: "Dispense", command: "c_dispense" },
+        { label: "Retract",  command: "c_retract"  },
+        { label: "Stop",     command: "c_stop"     },
+      ],
+      face: {
+        a: { label: "Dispense", command: "c_dispense" },
+        b: { label: "Retract",  command: "c_retract"  },
+        x: { label: "Fwd",      command: "c_fwd"      },
+        y: { label: "Stop",     command: "c_stop"     },
+      },
+    },
+  ],
+
+  cutter: [
+    {
+      id: "door", label: "Door / Clamp",
+      actions: [
+        { label: "Door Open",  command: "door_open"  },
+        { label: "Door Close", command: "door_close" },
+        { label: "Clamp",      command: "clamp"      },
+        { label: "Release",    command: "release"    },
+      ],
+      face: {
+        a: { label: "Door Open",  command: "door_open"  },
+        b: { label: "Door Close", command: "door_close" },
+        x: { label: "Clamp",      command: "clamp"      },
+        y: { label: "Release",    command: "release"    },
+      },
+    },
+    {
+      id: "motor", label: "Roller / Scissor",
+      actions: [
+        { label: "Roller Fwd",   command: "roller_fwd"   },
+        { label: "Roller Rev",   command: "roller_rev"   },
+        { label: "Roller Stop",  command: "roller_stop"  },
+        { label: "Scissor Fwd",  command: "scissor_fwd"  },
+        { label: "Scissor Rev",  command: "scissor_rev"  },
+        { label: "Scissor Stop", command: "scissor_stop" },
+      ],
+      face: {
+        a: { label: "Roller Fwd",  command: "roller_fwd"  },
+        b: { label: "Roller Rev",  command: "roller_rev"  },
+        x: { label: "Scissor Fwd", command: "scissor_fwd" },
+        y: { label: "Scissor Rev", command: "scissor_rev" },
+      },
+    },
+    {
+      id: "dispenser", label: "Dispensers",
+      actions: [
+        { label: "Pepper",   command: "pepper_dispense" },
+        { label: "Pump On",  command: "pump_on"         },
+        { label: "Pump Off", command: "pump_off"        },
+        { label: "Salt",     command: "salt_dispense"   },
+      ],
+      face: {
+        a: { label: "Pepper",   command: "pepper_dispense" },
+        b: { label: "Pump On",  command: "pump_on"         },
+        x: { label: "Pump Off", command: "pump_off"        },
+        y: { label: "Salt",     command: "salt_dispense"   },
+      },
+    },
+  ],
+}
+
+// Joystick usage per device  (null = not used → dimmed)
+const STICK_USE: Record<Device, { l: string | null; r: string | null; lDesc: string; rDesc: string }> = {
+  cooker:     { l: "Position (0–4)", r: null,           lDesc: "Release → set position", rDesc: "Not used" },
+  plating:    { l: "Pan Steps",      r: "Lid Dur ×50ms", lDesc: "Release → move pan",    rDesc: "Release → set lid duration" },
+  ingredient: { l: "Steps/rev",      r: null,           lDesc: "Release → set steps/rev", rDesc: "Not used" },
+  cutter:     { l: null,             r: null,           lDesc: "Not used",               rDesc: "Not used" },
+}
+
 // ── Loader ────────────────────────────────────────────────────────────────────
 
 export async function loader() {
@@ -28,7 +211,7 @@ export async function loader() {
   }
 }
 
-// ── Action — proxy commands to Python controller ──────────────────────────────
+// ── Action ────────────────────────────────────────────────────────────────────
 
 export async function action({ request }: ActionFunctionArgs) {
   const API  = process.env.CONTROLLER_API_URL ?? "http://localhost:5000"
@@ -50,20 +233,20 @@ export async function action({ request }: ActionFunctionArgs) {
       if (command === "position_delta") await post("/cooker/position", { delta: value })
       if (command === "set_position")   await post("/cooker/position", { position: Math.round(value) })
     } else if (device === "plating") {
-      if (command === "dispense")    await post("/plating/arm",  { action: "dispense" })
-      if (command === "retract")     await post("/plating/arm",  { action: "retract" })
-      if (command === "fwd_cont")    await post("/plating/arm",  { action: "fwd_cont" })
-      if (command === "bwd_cont")    await post("/plating/arm",  { action: "bwd_cont" })
-      if (command === "home_pan")    await post("/plating/home")
-      if (command === "stop_arm")    await post("/plating/arm",  { action: "stop" })
-      if (command === "move_pan")    await post("/plating/move", { m1: Math.round(value), m2: 0 })
-      if (command === "arm_dur")     await post("/plating/arm",  { duration_ms: Math.round(value), action: "stop" })
-      if (command === "lid_open")    await post("/plating/lid",  { action: "open" })
-      if (command === "lid_close")   await post("/plating/lid",  { action: "close" })
-      if (command === "lid_fwd")     await post("/plating/lid",  { action: "fwd_cont" })
-      if (command === "lid_bwd")     await post("/plating/lid",  { action: "bwd_cont" })
-      if (command === "stop_lid")    await post("/plating/lid",  { action: "stop" })
-      if (command === "lid_dur")     await post("/plating/lid",  { duration_ms: Math.round(value), action: "stop" })
+      if (command === "dispense")   await post("/plating/arm",  { action: "dispense" })
+      if (command === "retract")    await post("/plating/arm",  { action: "retract"  })
+      if (command === "fwd_cont")   await post("/plating/arm",  { action: "fwd_cont" })
+      if (command === "bwd_cont")   await post("/plating/arm",  { action: "bwd_cont" })
+      if (command === "home_pan")   await post("/plating/home")
+      if (command === "stop_arm")   await post("/plating/arm",  { action: "stop" })
+      if (command === "move_pan")   await post("/plating/move", { m1: Math.round(value), m2: 0 })
+      if (command === "arm_dur")    await post("/plating/arm",  { duration_ms: Math.round(value), action: "stop" })
+      if (command === "lid_open")   await post("/plating/lid",  { action: "open"     })
+      if (command === "lid_close")  await post("/plating/lid",  { action: "close"    })
+      if (command === "lid_fwd")    await post("/plating/lid",  { action: "fwd_cont" })
+      if (command === "lid_bwd")    await post("/plating/lid",  { action: "bwd_cont" })
+      if (command === "stop_lid")   await post("/plating/lid",  { action: "stop"     })
+      if (command === "lid_dur")    await post("/plating/lid",  { duration_ms: Math.round(value), action: "stop" })
     } else if (device === "ingredient") {
       if (command === "a_fwd")      await post("/ingredient/a/fwd")
       if (command === "a_bwd")      await post("/ingredient/a/bwd")
@@ -83,19 +266,19 @@ export async function action({ request }: ActionFunctionArgs) {
       if (command === "stop")       await post("/ingredient/stop")
       if (command === "set_rev")    await post("/ingredient/revolutions", { steps: Math.round(value) })
     } else if (device === "cutter") {
-      if (command === "door_open")       await post("/cutter/door",    { action: "open" })
-      if (command === "door_close")      await post("/cutter/door",    { action: "close" })
-      if (command === "clamp")           await post("/cutter/clamp",   { action: "clamp" })
-      if (command === "release")         await post("/cutter/clamp",   { action: "release" })
-      if (command === "roller_fwd")      await post("/cutter/roller",  { action: "fwd" })
-      if (command === "roller_rev")      await post("/cutter/roller",  { action: "rev" })
-      if (command === "roller_stop")     await post("/cutter/roller",  { action: "stop" })
-      if (command === "scissor_fwd")     await post("/cutter/scissor", { action: "fwd" })
-      if (command === "scissor_rev")     await post("/cutter/scissor", { action: "rev" })
-      if (command === "scissor_stop")    await post("/cutter/scissor", { action: "stop" })
+      if (command === "door_open")       await post("/cutter/door",    { action: "open"     })
+      if (command === "door_close")      await post("/cutter/door",    { action: "close"    })
+      if (command === "clamp")           await post("/cutter/clamp",   { action: "clamp"    })
+      if (command === "release")         await post("/cutter/clamp",   { action: "release"  })
+      if (command === "roller_fwd")      await post("/cutter/roller",  { action: "fwd"      })
+      if (command === "roller_rev")      await post("/cutter/roller",  { action: "rev"      })
+      if (command === "roller_stop")     await post("/cutter/roller",  { action: "stop"     })
+      if (command === "scissor_fwd")     await post("/cutter/scissor", { action: "fwd"      })
+      if (command === "scissor_rev")     await post("/cutter/scissor", { action: "rev"      })
+      if (command === "scissor_stop")    await post("/cutter/scissor", { action: "stop"     })
       if (command === "pepper_dispense") await post("/cutter/pepper",  { action: "dispense" })
-      if (command === "pump_on")         await post("/cutter/pump",    { action: "on" })
-      if (command === "pump_off")        await post("/cutter/pump",    { action: "off" })
+      if (command === "pump_on")         await post("/cutter/pump",    { action: "on"       })
+      if (command === "pump_off")        await post("/cutter/pump",    { action: "off"      })
       if (command === "salt_dispense")   await post("/cutter/salt",    { action: "dispense" })
     } else if (device === "system") {
       if (command === "ping") {
@@ -116,89 +299,58 @@ export function meta() {
   return [{ title: "Tastebox — Admin" }]
 }
 
-// ── Joystick component ────────────────────────────────────────────────────────
+// ── Joystick ──────────────────────────────────────────────────────────────────
 
 function Joystick({
-  label,
-  onValue,
-  onCommit,
-  description,
+  label, onValue, onCommit, description, dimmed,
 }: {
-  label: string
-  onValue: (v: number) => void
-  onCommit?: (v: number) => void
-  description?: string
+  label: string; onValue: (v: number) => void; onCommit?: (v: number) => void
+  description?: string; dimmed?: boolean
 }) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  const containerRef  = useRef<HTMLDivElement>(null)
   const [knob, setKnob]       = useState({ x: 0, y: 0 })
   const [display, setDisplay] = useState(50)
   const dragging = useRef(false)
-  const lastVal  = useRef(50)  // sync ref so onCommit always gets the real value
-  const R = 52  // container radius
+  const lastVal  = useRef(50)
+  const R = 52
 
   const updateFromPointer = useCallback((e: React.PointerEvent) => {
     if (!containerRef.current) return
     const rect = containerRef.current.getBoundingClientRect()
-    const cx   = rect.left + rect.width  / 2
-    const cy   = rect.top  + rect.height / 2
-    const dx   = e.clientX - cx
-    const dy   = e.clientY - cy
-    const dist = Math.hypot(dx, dy)
-    const r    = Math.min(dist, R)
-    const ang  = Math.atan2(dy, dx)
-    const pos  = { x: Math.cos(ang) * r, y: Math.sin(ang) * r }
+    const cx = rect.left + rect.width  / 2
+    const cy = rect.top  + rect.height / 2
+    const dx = e.clientX - cx
+    const dy = e.clientY - cy
+    const r  = Math.min(Math.hypot(dx, dy), R)
+    const ang = Math.atan2(dy, dx)
+    const pos = { x: Math.cos(ang) * r, y: Math.sin(ang) * r }
     setKnob(pos)
-    // Y axis: top → 100, center → 50, bottom → 0
     const val = Math.round(50 - (pos.y / R) * 50)
     lastVal.current = val
     setDisplay(val)
     onValue(val)
   }, [onValue, R])
 
-  const handlePointerDown = (e: React.PointerEvent) => {
-    e.currentTarget.setPointerCapture(e.pointerId)
-    dragging.current = true
-    updateFromPointer(e)
-  }
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!dragging.current) return
-    updateFromPointer(e)
-  }
-  const handlePointerUp = () => {
-    dragging.current = false
-    onCommit?.(lastVal.current)
-    lastVal.current = 50
-    setKnob({ x: 0, y: 0 })
-    setDisplay(50)
-    onValue(50)
-  }
-
   return (
-    <div className="flex flex-col items-center gap-3">
+    <div className={`flex flex-col items-center gap-3 transition-opacity ${dimmed ? "opacity-30" : ""}`}>
       <div
         ref={containerRef}
         className="relative rounded-full bg-neutral-800 border-2 border-neutral-600 cursor-pointer select-none"
         style={{ width: R * 2, height: R * 2 }}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
+        onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); dragging.current = true; updateFromPointer(e) }}
+        onPointerMove={e => { if (dragging.current) updateFromPointer(e) }}
+        onPointerUp={() => { dragging.current = false; onCommit?.(lastVal.current); lastVal.current = 50; setKnob({ x: 0, y: 0 }); setDisplay(50); onValue(50) }}
+        onPointerCancel={() => { dragging.current = false; setKnob({ x: 0, y: 0 }); setDisplay(50); onValue(50) }}
       >
-        {/* crosshairs */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-full h-px bg-neutral-700" />
         </div>
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="h-full w-px bg-neutral-700" />
         </div>
-        {/* knob */}
         <div
           className="absolute rounded-full bg-neutral-300 pointer-events-none"
-          style={{
-            width: 22, height: 22,
-            left: R - 11 + knob.x,
-            top:  R - 11 + knob.y,
-          }}
+          style={{ width: 22, height: 22, left: R - 11 + knob.x, top: R - 11 + knob.y }}
         />
       </div>
       <span className="text-neutral-400 text-[18px]">{label}: <span className="text-white font-mono">{display}</span></span>
@@ -207,86 +359,10 @@ function Joystick({
   )
 }
 
-// ── D-pad ─────────────────────────────────────────────────────────────────────
-
-function DPad({
-  onPress,
-  labels,
-}: {
-  onPress: (dir: "up" | "down" | "left" | "right") => void
-  labels?: Partial<Record<"up" | "down" | "left" | "right", string>>
-}) {
-  const btn = (dir: "up" | "down" | "left" | "right", arrow: string, cls: string) => (
-    <button
-      onClick={() => onPress(dir)}
-      className={`w-16 h-16 rounded-lg bg-neutral-700 active:bg-neutral-500 flex flex-col items-center justify-center text-white select-none ${cls}`}
-    >
-      <span className="text-[22px] font-bold">{arrow}</span>
-      {labels?.[dir] && <span className="text-[9px] leading-none text-center px-0.5 opacity-80">{labels[dir]}</span>}
-    </button>
-  )
-  return (
-    <div className="relative" style={{ width: 192, height: 192 }}>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="w-16 h-16 rounded-lg bg-neutral-800 border border-neutral-600" />
-      </div>
-      {/* up */}
-      <div className="absolute top-0 left-0 right-0 flex justify-center">
-        {btn("up", "▲", "")}
-      </div>
-      {/* down */}
-      <div className="absolute bottom-0 left-0 right-0 flex justify-center">
-        {btn("down", "▼", "")}
-      </div>
-      {/* left */}
-      <div className="absolute top-0 bottom-0 left-0 flex items-center">
-        {btn("left", "◀", "")}
-      </div>
-      {/* right */}
-      <div className="absolute top-0 bottom-0 right-0 flex items-center">
-        {btn("right", "▶", "")}
-      </div>
-    </div>
-  )
-}
-
-// ── Face buttons (ABXY) ───────────────────────────────────────────────────────
-
-function FaceButtons({ labels, onPress }: {
-  labels: Record<"a" | "b" | "x" | "y", string | null>
-  onPress: (btn: "a" | "b" | "x" | "y") => void
-}) {
-  const COLORS = { a: "#22c55e", b: "#ef4444", x: "#3b82f6", y: "#eab308" }
-  const btn = (id: "a" | "b" | "x" | "y", pos: string) => {
-    const label = labels[id]
-    return (
-      <button
-        key={id}
-        onClick={() => label && onPress(id)}
-        disabled={!label}
-        className={`w-16 h-16 rounded-full flex flex-col items-center justify-center text-white text-[11px] font-bold gap-0.5 select-none ${pos} ${label ? "active:opacity-60" : "opacity-20"}`}
-        style={{ background: COLORS[id] }}
-      >
-        <span className="text-[18px] font-black">{id.toUpperCase()}</span>
-        {label && <span className="text-[10px] leading-tight text-center px-1 opacity-90">{label}</span>}
-      </button>
-    )
-  }
-  return (
-    <div className="relative" style={{ width: 192, height: 192 }}>
-      <div className="absolute top-0 left-0 right-0 flex justify-center">{btn("y", "")}</div>
-      <div className="absolute bottom-0 left-0 right-0 flex justify-center">{btn("a", "")}</div>
-      <div className="absolute top-0 bottom-0 left-0 flex items-center">{btn("x", "")}</div>
-      <div className="absolute top-0 bottom-0 right-0 flex items-center">{btn("b", "")}</div>
-    </div>
-  )
-}
-
 // ── Status display ────────────────────────────────────────────────────────────
 
 function StatusRow({ status, device }: { status: StatusData | null; device: Device }) {
   if (!status?.ok) return <span className="text-red-400 text-[18px]">Controller offline</span>
-  const ARM_LABELS = ["at A", "at B", "moving"]
   const data = status[device]
   if (!data) return <span className="text-neutral-500 text-[18px]">—</span>
   if (!data.online) return <span className="text-yellow-400 text-[18px]">device offline</span>
@@ -302,33 +378,36 @@ function StatusRow({ status, device }: { status: StatusData | null; device: Devi
   }
   if (device === "plating") {
     const d = data as NonNullable<StatusData["plating"]>
-    const LID_LABELS = ["closed", "open", "moving"]
+    const ARM = ["at A", "at B", "moving"]
+    const LID = ["closed", "open", "moving"]
     return (
       <div className="flex gap-6 text-[18px] text-neutral-300 font-mono">
         <span>pan <strong className="text-white">{d.m1_pos}</strong>{d.m1_busy && " (busy)"}</span>
-        <span>arm <strong className="text-white">{ARM_LABELS[d.arm] ?? d.arm}</strong>{d.m2_busy && " (busy)"}</span>
-        <span>lid <strong className="text-white">{LID_LABELS[d.lid] ?? d.lid}</strong>{d.lid_busy && " (busy)"}</span>
+        <span>arm <strong className="text-white">{ARM[d.arm] ?? d.arm}</strong>{d.m2_busy && " (busy)"}</span>
+        <span>lid <strong className="text-white">{LID[d.lid] ?? d.lid}</strong>{d.lid_busy && " (busy)"}</span>
       </div>
     )
   }
   if (device === "ingredient") {
     const d = data as NonNullable<StatusData["ingredient"]>
+    const st = (b: boolean) => <strong className={b ? "text-yellow-400" : "text-neutral-500"}>{b ? "busy" : "idle"}</strong>
     return (
       <div className="flex gap-6 text-[18px] text-neutral-300 font-mono">
-        <span>A <strong className={d.a_busy ? "text-yellow-400" : "text-neutral-500"}>{d.a_busy ? "busy" : "idle"}</strong></span>
-        <span>B <strong className={d.b_busy ? "text-yellow-400" : "text-neutral-500"}>{d.b_busy ? "busy" : "idle"}</strong></span>
-        <span>C <strong className={d.c_busy ? "text-yellow-400" : "text-neutral-500"}>{d.c_busy ? "busy" : "idle"}</strong></span>
+        <span>A {st(d.a_busy)}</span>
+        <span>B {st(d.b_busy)}</span>
+        <span>C {st(d.c_busy)}</span>
       </div>
     )
   }
   if (device === "cutter") {
     const d = data as NonNullable<StatusData["cutter"]>
+    const st = (b: boolean) => <strong className={b ? "text-yellow-400" : "text-neutral-500"}>{b ? "busy" : "idle"}</strong>
     return (
       <div className="flex gap-4 text-[18px] text-neutral-300 font-mono flex-wrap">
-        <span>door <strong className={d.door_busy ? "text-yellow-400" : "text-neutral-500"}>{d.door_busy ? "busy" : "idle"}</strong></span>
-        <span>clamp <strong className={d.clamp_busy ? "text-yellow-400" : "text-neutral-500"}>{d.clamp_busy ? "busy" : "idle"}</strong></span>
-        <span>roller <strong className={d.roller_busy ? "text-yellow-400" : "text-neutral-500"}>{d.roller_busy ? "busy" : "idle"}</strong></span>
-        <span>scissor <strong className={d.scissor_busy ? "text-yellow-400" : "text-neutral-500"}>{d.scissor_busy ? "busy" : "idle"}</strong></span>
+        <span>door {st(d.door_busy)}</span>
+        <span>clamp {st(d.clamp_busy)}</span>
+        <span>roller {st(d.roller_busy)}</span>
+        <span>scissor {st(d.scissor_busy)}</span>
       </div>
     )
   }
@@ -337,9 +416,7 @@ function StatusRow({ status, device }: { status: StatusData | null; device: Devi
 
 // ── Device status grid ────────────────────────────────────────────────────────
 
-function DeviceCard({
-  id, addr, ctrlOnline, detected, detail,
-}: {
+function DeviceCard({ id, addr, ctrlOnline, detected, detail }: {
   id: Device; addr: string; ctrlOnline: boolean; detected: boolean; detail?: string
 }) {
   return (
@@ -352,49 +429,142 @@ function DeviceCard({
       <span className={`text-[15px] font-semibold ${detected ? "text-green-600" : "text-red-400"}`}>
         {!ctrlOnline ? "ctrl offline" : detected ? "detected" : "not found"}
       </span>
-      {detected && detail && (
-        <span className="text-[13px] text-neutral-600 font-mono leading-snug">{detail}</span>
-      )}
+      {detected && detail && <span className="text-[13px] text-neutral-600 font-mono leading-snug">{detail}</span>}
     </div>
   )
 }
 
 function DeviceStatusGrid({ status }: { status: StatusData | null }) {
-  const ctrlOnline = status?.ok ?? false
-  const ARM_LABELS = ["at A", "at B", "moving"]
-  const c = status?.cooker
-  const p = status?.plating
-  const i = status?.ingredient
-  const x = status?.cutter
+  const ok = status?.ok ?? false
+  const c = status?.cooker;     const p = status?.plating
+  const i = status?.ingredient; const x = status?.cutter
+  const ARM = ["at A", "at B", "moving"]
   return (
     <div className="grid grid-cols-4 gap-4">
-      <DeviceCard id="cooker"     addr="RS485 #01" ctrlOnline={ctrlOnline} detected={c?.online ?? false}
+      <DeviceCard id="cooker"     addr="RS485 #01" ctrlOnline={ok} detected={c?.online ?? false}
         detail={c?.online ? `pos ${c.position} · ${c.on ? "ON" : "off"}` : undefined} />
-      <DeviceCard id="plating"    addr="RS485 #02" ctrlOnline={ctrlOnline} detected={p?.online ?? false}
-        detail={p?.online ? `pan ${p.m1_pos} · arm ${ARM_LABELS[p.arm] ?? p.arm} · lid ${["closed","open","moving"][p.lid] ?? p.lid}` : undefined} />
-      <DeviceCard id="ingredient" addr="RS485 #03" ctrlOnline={ctrlOnline} detected={i?.online ?? false}
+      <DeviceCard id="plating"    addr="RS485 #02" ctrlOnline={ok} detected={p?.online ?? false}
+        detail={p?.online ? `pan ${p.m1_pos} · arm ${ARM[p.arm] ?? p.arm} · lid ${["closed","open","moving"][p.lid] ?? p.lid}` : undefined} />
+      <DeviceCard id="ingredient" addr="RS485 #03" ctrlOnline={ok} detected={i?.online ?? false}
         detail={i?.online ? `A:${i.a_busy?"busy":"idle"} B:${i.b_busy?"busy":"idle"} C:${i.c_busy?"busy":"idle"}` : undefined} />
-      <DeviceCard id="cutter"     addr="RS485 #04" ctrlOnline={ctrlOnline} detected={x?.online ?? false}
-        detail={x?.online ? `door:${x.door_busy?"busy":"idle"} clamp:${x.clamp_busy?"busy":"idle"} roller:${x.roller_busy?"busy":"idle"}` : undefined} />
+      <DeviceCard id="cutter"     addr="RS485 #04" ctrlOnline={ok} detected={x?.online ?? false}
+        detail={x?.online ? `door:${x.door_busy?"busy":"idle"} clamp:${x.clamp_busy?"busy":"idle"}` : undefined} />
     </div>
   )
 }
 
-// ── Per-device button layout ──────────────────────────────────────────────────
+// ── Action rows (the main control surface) ────────────────────────────────────
 
-type BtnMap = { a: string | null; b: string | null; x: string | null; y: string | null }
+const FACE_COLORS = { a: "#22c55e", b: "#ef4444", x: "#3b82f6", y: "#eab308" }
+const FACE_KEYS   = ["a", "b", "x", "y"] as const
 
-const FACE_LABELS: Record<Device, BtnMap> = {
-  cooker:     { a: "Click",     b: "Reset",     x: null,        y: null        },
-  plating:    { a: "Arm Disp",  b: "Arm Ret",   x: "Lid Open",  y: "Lid Close" },
-  ingredient: { a: "A Dispense", b: "B Dispense", x: "Stop A",  y: "Stop B"   },
-  cutter:     { a: "Door Open", b: "Door Close", x: "Clamp",    y: "Release"  },
+function ActionRows({
+  subs, activeIdx, onAction,
+}: {
+  subs: SubComponent[]; activeIdx: number; onAction: (cmd: string, val?: number) => void
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      {subs.map((sub, idx) => {
+        const active = idx === activeIdx
+        return (
+          <div key={sub.id} className={`flex items-start gap-4 transition-opacity ${active ? "opacity-100" : "opacity-30 pointer-events-none"}`}>
+            <span className={`text-[17px] font-bold w-32 text-right pt-2 shrink-0 ${active ? "text-white" : "text-neutral-400"}`}>
+              {sub.label}
+            </span>
+            <div className="flex gap-2 flex-wrap">
+              {sub.actions.map((a) => {
+                const fk = FACE_KEYS.find(k => {
+                  const f = sub.face[k]
+                  return f && f.command === a.command && (f.value ?? null) === (a.value ?? null)
+                })
+                return (
+                  <button
+                    key={`${a.command}-${a.value ?? ""}`}
+                    onClick={() => onAction(a.command, a.value)}
+                    className="relative px-5 py-2.5 rounded-xl bg-neutral-200 text-neutral-800 text-[18px] font-semibold active:bg-neutral-400"
+                  >
+                    {a.label}
+                    {fk && (
+                      <span
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full text-[10px] font-black text-white flex items-center justify-center"
+                        style={{ background: FACE_COLORS[fk] }}
+                      >
+                        {fk.toUpperCase()}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Face button cluster (visual reference) ────────────────────────────────────
+
+function FaceCluster({ face }: { face: FaceMap }) {
+  const btn = (id: "a" | "b" | "x" | "y", pos: string) => {
+    const mapped = face[id]
+    return (
+      <div
+        key={id}
+        className={`w-14 h-14 rounded-full flex flex-col items-center justify-center text-white gap-0.5 select-none ${pos} transition-opacity ${mapped ? "opacity-100" : "opacity-20"}`}
+        style={{ background: FACE_COLORS[id] }}
+      >
+        <span className="text-[16px] font-black">{id.toUpperCase()}</span>
+        {mapped && <span className="text-[9px] leading-none text-center px-1 opacity-90 font-semibold">{mapped.label}</span>}
+      </div>
+    )
+  }
+  return (
+    <div className="relative shrink-0" style={{ width: 168, height: 168 }}>
+      <div className="absolute top-0 left-0 right-0 flex justify-center">{btn("y", "")}</div>
+      <div className="absolute bottom-0 left-0 right-0 flex justify-center">{btn("a", "")}</div>
+      <div className="absolute top-0 bottom-0 left-0 flex items-center">{btn("x", "")}</div>
+      <div className="absolute top-0 bottom-0 right-0 flex items-center">{btn("b", "")}</div>
+    </div>
+  )
+}
+
+// ── Sub-component selector tabs ───────────────────────────────────────────────
+
+function SubTabs({
+  subs, activeIdx, onChange,
+}: {
+  subs: SubComponent[]; activeIdx: number; onChange: (i: number) => void
+}) {
+  if (subs.length <= 1) return null
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-[14px] text-neutral-500 font-mono shrink-0">D-pad ↑ ↓</span>
+      <div className="flex gap-2">
+        {subs.map((s, i) => (
+          <button
+            key={s.id}
+            onClick={() => onChange(i)}
+            className={`px-5 py-2 rounded-xl text-[18px] font-bold transition-colors ${
+              i === activeIdx ? "bg-neutral-800 text-white" : "bg-neutral-200 text-neutral-500 hover:bg-neutral-300"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Admin() {
-  const [device, setDevice] = useState<Device>("cooker")
+  const [deviceIdx, setDeviceIdx] = useState(0)
+  const [subIdxMap, setSubIdxMap] = useState<Record<Device, number>>(
+    { cooker: 0, plating: 0, ingredient: 0, cutter: 0 },
+  )
   const [lVal, setLVal] = useState(50)
   const [rVal, setRVal] = useState(50)
 
@@ -403,7 +573,6 @@ export default function Admin() {
   const statusFetcher = useFetcher<typeof loader>()
   const pingFetcher   = useFetcher<typeof action>()
 
-  // Poll status every 2 s
   useEffect(() => {
     statusFetcher.load("/admin")
     const id = setInterval(() => statusFetcher.load("/admin"), 2000)
@@ -414,6 +583,12 @@ export default function Admin() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pingNodes  = (pingFetcher.data as any)?.ping?.nodes ?? null
 
+  const device = DEVICES[deviceIdx]
+  const subs   = DEVICE_CONFIG[device]
+  const subIdx = subIdxMap[device]
+  const sub    = subs[subIdx]
+  const sticks = STICK_USE[device]
+
   const send = useCallback((command: string, value: number = 0) => {
     cmdFetcher.submit(
       { device, command, value: String(value) },
@@ -421,144 +596,60 @@ export default function Admin() {
     )
   }, [device, cmdFetcher])
 
-  const handleDpad = (dir: "up" | "down" | "left" | "right") => {
-    const map: Record<Device, Record<string, () => void>> = {
-      cooker: {
-        up:    () => send("position_delta", +1),
-        down:  () => send("position_delta", -1),
-        left:  () => send("set_position", 0),
-        right: () => {},
-      },
-      plating: {
-        up:    () => send("fwd_cont"),
-        down:  () => send("bwd_cont"),
-        left:  () => send("lid_bwd"),
-        right: () => send("lid_fwd"),
-      },
-      ingredient: {
-        up:    () => send("a_fwd"),
-        down:  () => send("a_bwd"),
-        left:  () => send("b_fwd"),
-        right: () => send("b_bwd"),
-      },
-      cutter: {
-        up:    () => send("roller_fwd"),
-        down:  () => send("roller_rev"),
-        left:  () => send("scissor_rev"),
-        right: () => send("scissor_fwd"),
-      },
-    }
-    map[device][dir]?.()
-  }
+  const prevDevice = useCallback(() => setDeviceIdx(i => (i - 1 + DEVICES.length) % DEVICES.length), [])
+  const nextDevice = useCallback(() => setDeviceIdx(i => (i + 1) % DEVICES.length), [])
 
-  const handleFace = (btn: "a" | "b" | "x" | "y") => {
-    const map: Record<Device, Record<string, () => void>> = {
-      cooker: {
-        a: () => send("click"),
-        b: () => send("reset"),
-        x: () => {},
-        y: () => {},
-      },
-      plating: {
-        a: () => send("dispense"),
-        b: () => send("retract"),
-        x: () => send("lid_open"),
-        y: () => send("lid_close"),
-      },
-      ingredient: {
-        a: () => send("a_dispense"),  // A one revolution
-        b: () => send("b_dispense"),  // B one revolution
-        x: () => send("a_stop"),
-        y: () => send("b_stop"),
-      },
-      cutter: {
-        a: () => send("door_open"),
-        b: () => send("door_close"),
-        x: () => send("clamp"),
-        y: () => send("release"),
-      },
-    }
-    map[device][btn]?.()
-  }
-
-  const lStickLabel: Record<Device, string> = {
-    cooker:     "Position (0–4)",
-    plating:    "Pan Steps",
-    ingredient: "Steps/rev (0–400)",
-    cutter:     "—",
-  }
-  const rStickLabel: Record<Device, string> = {
-    cooker:     "—",
-    plating:    "Lid Dur ×50ms",
-    ingredient: "—",
-    cutter:     "—",
-  }
-  const lStickDesc: Record<Device, string> = {
-    cooker:     "Release → set position (0–4)",
-    plating:    "Release → move pan by steps",
-    ingredient: "Release → set steps per revolution",
-    cutter:     "Not used",
-  }
-  const rStickDesc: Record<Device, string> = {
-    cooker:     "Not used",
-    plating:    "Release → set lid duration (no move)",
-    ingredient: "Not used",
-    cutter:     "Not used",
-  }
-  const DPAD_LABELS: Record<Device, Partial<Record<"up"|"down"|"left"|"right", string>>> = {
-    cooker:     { up: "+1 pos", down: "−1 pos", left: "home" },
-    plating:    { up: "arm fwd", down: "arm bwd", left: "lid bwd", right: "lid fwd" },
-    ingredient: { up: "A fwd", down: "A bwd", left: "B fwd", right: "B bwd" },
-    cutter:     { up: "Roller Fwd", down: "Roller Rev", left: "Scissor Rev", right: "Scissor Fwd" },
-  }
+  const prevSub = useCallback(() =>
+    setSubIdxMap(m => ({ ...m, [device]: (m[device] - 1 + subs.length) % subs.length })),
+    [device, subs.length])
+  const nextSub = useCallback(() =>
+    setSubIdxMap(m => ({ ...m, [device]: (m[device] + 1) % subs.length })),
+    [device, subs.length])
 
   const handleLCommit = useCallback((v: number) => {
     if (device === "cooker")     send("set_position", Math.round(v / 100 * 4))
     if (device === "plating")    send("move_pan",     Math.round((v - 50) * 4))
-    if (device === "ingredient") send("set_rev", Math.round(v / 100 * 400))  // 0–400 steps
+    if (device === "ingredient") send("set_rev",      Math.round(v / 100 * 400))
   }, [device, send])
   const handleRCommit = useCallback((v: number) => {
     if (device === "plating") send("lid_dur", v * 50)
   }, [device, send])
 
-  // Physical gamepad support
-  // D-pad: 12=↑ 13=↓ 14=← 15=→  |  Face: 0=A 1=B 2=X 3=Y  |  L3=10 R3=11
   const gpConnected = useGamepadInput(
     (btn) => {
-      if (btn === 12) handleDpad("up")
-      if (btn === 13) handleDpad("down")
-      if (btn === 14) handleDpad("left")
-      if (btn === 15) handleDpad("right")
-      if (btn === 0)  handleFace("a")
-      if (btn === 1)  handleFace("b")
-      if (btn === 2)  handleFace("x")
-      if (btn === 3)  handleFace("y")
-      if (btn === 10) handleLCommit(lVal)   // L3 → commit left stick
-      if (btn === 11) handleRCommit(rVal)   // R3 → commit right stick
+      // LB / RB + D-pad ← → — cycle devices
+      if (btn === 4 || btn === 14) prevDevice()
+      if (btn === 5 || btn === 15) nextDevice()
+      // D-pad ↑ ↓ — cycle sub-components
+      if (btn === 12) prevSub()
+      if (btn === 13) nextSub()
+      // Face — current sub actions
+      if (btn === 0 && sub.face.a) send(sub.face.a.command, sub.face.a.value ?? 0)
+      if (btn === 1 && sub.face.b) send(sub.face.b.command, sub.face.b.value ?? 0)
+      if (btn === 2 && sub.face.x) send(sub.face.x.command, sub.face.x.value ?? 0)
+      if (btn === 3 && sub.face.y) send(sub.face.y.command, sub.face.y.value ?? 0)
+      // L3/R3 — commit sticks
+      if (btn === 10) handleLCommit(lVal)
+      if (btn === 11) handleRCommit(rVal)
     },
     (axes) => {
-      // Left stick Y (axis 1): -1=up → 100, +1=down → 0
-      const ly = axes[1]
-      if (ly !== 0) setLVal(Math.round(50 - ly * 50))
-      // Right stick Y (axis 3)
-      const ry = axes[3]
-      if (ry !== 0) setRVal(Math.round(50 - ry * 50))
+      const ly = axes[1]; if (ly !== 0) setLVal(Math.round(50 - ly * 50))
+      const ry = axes[3]; if (ry !== 0) setRVal(Math.round(50 - ry * 50))
     },
   )
 
-  const DEVICES: Device[] = ["cooker", "plating", "ingredient", "cutter"]
+  const prevDeviceName = DEVICES[(deviceIdx - 1 + DEVICES.length) % DEVICES.length]
+  const nextDeviceName = DEVICES[(deviceIdx + 1) % DEVICES.length]
 
   return (
     <div className="screen overflow-y-auto">
-      <div className="flex flex-col gap-8 px-10 py-12 min-h-full">
+      <div className="flex flex-col gap-6 px-10 py-10 min-h-full">
 
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <button
-              onClick={() => navigate("/")}
-              className="text-[28px] text-neutral-400 active:text-neutral-600 select-none"
-            >
+            <button onClick={() => navigate("/")}
+              className="text-[28px] text-neutral-400 active:text-neutral-600 select-none">
               ← Back
             </button>
             <h1 className="text-[60px] font-black tracking-tight">ADMIN DEBUG</h1>
@@ -605,22 +696,29 @@ export default function Admin() {
           </div>
         )}
 
-        {/* Device selector */}
-        <div className="flex gap-4">
-          {DEVICES.map((d) => (
-            <button
-              key={d}
-              onClick={() => setDevice(d)}
-              className={`px-8 py-4 rounded-2xl text-[24px] font-bold capitalize transition-colors ${
-                device === d
-                  ? "text-white"
-                  : "bg-neutral-200 text-neutral-600"
-              }`}
-              style={device === d ? { background: "#8B2020" } : {}}
-            >
-              {d}
-            </button>
-          ))}
+        {/* Device selector — D-pad ← → */}
+        <div className="flex items-center gap-4">
+          <span className="text-[14px] text-neutral-500 font-mono shrink-0">LB / RB</span>
+          <div className="flex gap-3">
+            {DEVICES.map((d, i) => (
+              <button
+                key={d}
+                onClick={() => setDeviceIdx(i)}
+                className={`px-8 py-4 rounded-2xl text-[24px] font-bold capitalize transition-colors ${
+                  i === deviceIdx ? "text-white" : "bg-neutral-200 text-neutral-600"
+                }`}
+                style={i === deviceIdx ? { background: "#8B2020" } : {}}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+          {/* D-pad nav hint */}
+          <div className="ml-auto flex items-center gap-3 text-[16px] text-neutral-500 font-mono">
+            <span>◄ {prevDeviceName}</span>
+            <span className="text-neutral-300 font-bold capitalize">{device}</span>
+            <span>{nextDeviceName} ►</span>
+          </div>
         </div>
 
         {/* Status row */}
@@ -628,56 +726,44 @@ export default function Admin() {
           <StatusRow status={statusData} device={device} />
         </div>
 
-        {/* Gamepad area */}
-        <div className="flex justify-between items-center px-4">
-          <DPad onPress={handleDpad} labels={DPAD_LABELS[device]} />
-          <FaceButtons labels={FACE_LABELS[device]} onPress={handleFace} />
+        {/* Main control area */}
+        <div className="flex gap-10 items-start">
+
+          {/* Left: sub-component tabs + action rows */}
+          <div className="flex flex-col gap-5 flex-1">
+            <SubTabs subs={subs} activeIdx={subIdx} onChange={i => setSubIdxMap(m => ({ ...m, [device]: i }))} />
+            <ActionRows subs={subs} activeIdx={subIdx} onAction={(cmd, val) => send(cmd, val ?? 0)} />
+          </div>
+
+          {/* Right: face button cluster */}
+          <div className="flex flex-col items-center gap-4 shrink-0">
+            <span className="text-[14px] text-neutral-500 font-mono">face buttons</span>
+            <FaceCluster face={sub.face} />
+          </div>
         </div>
 
-        {/* Sticks */}
-        <div className="flex justify-between items-start px-4 pt-4">
-          <Joystick label={lStickLabel[device]} onValue={setLVal} onCommit={handleLCommit} description={lStickDesc[device]} />
-          <Joystick label={rStickLabel[device]} onValue={setRVal} onCommit={handleRCommit} description={rStickDesc[device]} />
-        </div>
-
-        {/* Ingredient C motor controls */}
-        {device === "ingredient" && (
-          <div className="px-4">
-            <p className="text-[20px] text-neutral-500 mb-4">Motor C</p>
-            <div className="flex gap-4 flex-wrap">
-              {(["c_fwd", "c_bwd", "c_dispense", "c_retract", "c_stop"] as const).map((cmd) => (
-                <button
-                  key={cmd}
-                  onClick={() => send(cmd)}
-                  className="px-6 py-3 rounded-xl bg-neutral-200 text-neutral-700 text-[20px] font-semibold active:bg-neutral-400"
-                >
-                  {cmd === "c_fwd" ? "C Fwd" : cmd === "c_bwd" ? "C Bwd" : cmd === "c_dispense" ? "C Dispense" : cmd === "c_retract" ? "C Retract" : "C Stop"}
-                </button>
-              ))}
-            </div>
+        {/* Joysticks — only for devices that use them */}
+        {(sticks.l || sticks.r) && (
+          <div className="flex justify-between items-start px-4 pt-2">
+            <Joystick
+              label={sticks.l ?? "—"}
+              onValue={setLVal}
+              onCommit={handleLCommit}
+              description={sticks.lDesc}
+              dimmed={!sticks.l}
+            />
+            <Joystick
+              label={sticks.r ?? "—"}
+              onValue={setRVal}
+              onCommit={handleRCommit}
+              description={sticks.rDesc}
+              dimmed={!sticks.r}
+            />
           </div>
         )}
 
-        {/* Cutter dispenser buttons */}
-        {device === "cutter" && (
-          <div className="px-4">
-            <p className="text-[20px] text-neutral-500 mb-4">Dispensers</p>
-            <div className="flex gap-4 flex-wrap">
-              {(["pepper_dispense", "pump_on", "pump_off", "salt_dispense"] as const).map((cmd) => (
-                <button
-                  key={cmd}
-                  onClick={() => send(cmd)}
-                  className="px-6 py-3 rounded-xl bg-neutral-200 text-neutral-700 text-[20px] font-semibold active:bg-neutral-400"
-                >
-                  {cmd === "pepper_dispense" ? "Pepper" : cmd === "pump_on" ? "Pump On" : cmd === "pump_off" ? "Pump Off" : "Salt"}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* System state buttons */}
-        <div className="mt-auto pt-8 border-t border-neutral-200">
+        {/* LCD State */}
+        <div className="mt-auto pt-6 border-t border-neutral-200">
           <p className="text-[20px] text-neutral-500 mb-4">LCD State</p>
           <div className="flex gap-4 flex-wrap">
             {(["idle", "personalizing", "cooking", "finished"] as const).map((s) => (
