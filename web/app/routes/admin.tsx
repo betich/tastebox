@@ -288,6 +288,17 @@ export async function action({ request }: ActionFunctionArgs) {
       }
       if (command === "set_state")
         await post("/state", { state: form.get("state_name") as string })
+      if (command === "estop") {
+        await Promise.all([
+          post("/cooker/reset"),
+          post("/plating/arm",  { action: "stop" }),
+          post("/plating/lid",  { action: "stop" }),
+          post("/ingredient/stop"),
+          post("/cutter/roller",  { action: "stop" }),
+          post("/cutter/scissor", { action: "stop" }),
+          post("/cutter/pump",    { action: "off"  }),
+        ])
+      }
     }
     return { ok: true }
   } catch (err) {
@@ -568,10 +579,13 @@ export default function Admin() {
   const [lVal, setLVal] = useState(50)
   const [rVal, setRVal] = useState(50)
 
-  const navigate      = useNavigate()
-  const cmdFetcher    = useFetcher()
-  const statusFetcher = useFetcher<typeof loader>()
-  const pingFetcher   = useFetcher<typeof action>()
+  const [estopOff, setEstopOff] = useState(false)
+
+  const navigate       = useNavigate()
+  const cmdFetcher     = useFetcher()
+  const statusFetcher  = useFetcher<typeof loader>()
+  const pingFetcher    = useFetcher<typeof action>()
+  const estopFetcher   = useFetcher<typeof action>()
 
   useEffect(() => {
     statusFetcher.load("/admin")
@@ -788,6 +802,36 @@ export default function Admin() {
         </div>
 
       </div>
+
+      {/* E-STOP — fixed bottom-right */}
+      <div className="fixed bottom-8 right-8 flex flex-col items-center gap-4 z-50">
+        {/* ON / OFF toggle */}
+        <div className="flex items-center gap-3 select-none">
+          <span className={`text-[18px] font-bold ${!estopOff ? "text-green-500" : "text-neutral-400"}`}>ON</span>
+          <button
+            onClick={() => setEstopOff(v => !v)}
+            className={`relative w-16 h-8 rounded-full transition-colors ${estopOff ? "bg-neutral-400" : "bg-green-500"}`}
+          >
+            <div className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow transition-all ${estopOff ? "left-1" : "left-9"}`} />
+          </button>
+          <span className={`text-[18px] font-bold ${estopOff ? "text-red-500" : "text-neutral-400"}`}>OFF</span>
+        </div>
+        {/* Big red E-STOP button */}
+        <button
+          onClick={() => {
+            setEstopOff(true)
+            estopFetcher.submit(
+              { device: "system", command: "estop", value: "0" },
+              { method: "POST", action: "/admin" },
+            )
+          }}
+          disabled={estopFetcher.state !== "idle"}
+          className="w-36 h-36 rounded-full bg-red-600 hover:bg-red-500 active:bg-red-800 disabled:opacity-60 text-white text-[24px] font-black shadow-2xl border-[6px] border-red-900 select-none transition-colors"
+        >
+          {estopFetcher.state !== "idle" ? "STOPPING" : "E-STOP"}
+        </button>
+      </div>
+
     </div>
   )
 }
