@@ -540,7 +540,7 @@ function SubTabs({
   if (subs.length <= 1) return null
   return (
     <div className="flex items-center gap-3">
-      <span className="text-[14px] text-neutral-500 font-mono shrink-0">D-pad ↑ ↓</span>
+      <span className="text-[14px] text-neutral-500 font-mono shrink-0">D-pad ← →</span>
       <div className="flex gap-2">
         {subs.map((s, i) => (
           <button
@@ -617,12 +617,12 @@ export default function Admin() {
 
   const gpConnected = useGamepadInput(
     (btn) => {
-      // LB / RB + D-pad ← → — cycle devices
-      if (btn === 4 || btn === 14) prevDevice()
-      if (btn === 5 || btn === 15) nextDevice()
-      // D-pad ↑ ↓ — cycle sub-components
-      if (btn === 12) prevSub()
-      if (btn === 13) nextSub()
+      // LB / RB — cycle devices
+      if (btn === 4) prevDevice()
+      if (btn === 5) nextDevice()
+      // D-pad ← → ↑ ↓ — cycle sub-components
+      if (btn === 14 || btn === 12) prevSub()
+      if (btn === 15 || btn === 13) nextSub()
       // Face — current sub actions
       if (btn === 0 && sub.face.a) send(sub.face.a.command, sub.face.a.value ?? 0)
       if (btn === 1 && sub.face.b) send(sub.face.b.command, sub.face.b.value ?? 0)
