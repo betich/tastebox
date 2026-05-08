@@ -44,15 +44,15 @@ const DEVICE_CONFIG: Record<Device, SubComponent[]> = {
     {
       id: "arm", label: "Arm",
       actions: [
-        { label: "Dispense", command: "dispense" },
-        { label: "Retract",  command: "retract"  },
+        { label: "Retract",  command: "dispense" },
+        { label: "Dispense", command: "retract"  },
         { label: "Fwd",      command: "fwd_cont" },
         { label: "Bwd",      command: "bwd_cont" },
         { label: "Stop",     command: "stop_arm" },
       ],
       face: {
-        a: { label: "Dispense", command: "dispense" },
-        b: { label: "Retract",  command: "retract"  },
+        a: { label: "Retract",  command: "dispense" },
+        b: { label: "Dispense", command: "retract"  },
         x: { label: "Fwd",      command: "fwd_cont" },
         y: { label: "Stop",     command: "stop_arm" },
       },

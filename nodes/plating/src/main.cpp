@@ -22,14 +22,15 @@
 #define PIN_ARM_R_IS   5
 #define PIN_ARM_L_PWM  6   // forward/plate (PWM)
 #define PIN_ARM_R_PWM  7   // reverse/home  (digital)
-#define ARM_PWM_SPEED  200
+#define ARM_PWM_FWD    50   // dispense (forward): 75% slower than original 200
+#define ARM_PWM_BWD   128   // retract  (backward): 50% slower; brake-mode PWM via L_PWM
 
 // Lid IBD_2
 #define PIN_LID_L_IS   8
 #define PIN_LID_R_IS   9
 #define PIN_LID_L_PWM  2   // close (digital — D2 not PWM on Nano)
 #define PIN_LID_R_PWM  3   // open  (PWM)
-#define LID_PWM_SPEED  40   // duty cycle 0–255; both directions matched via brake-mode PWM
+#define LID_PWM_SPEED  20   // 50% of previous 40; both directions via brake-mode PWM
 
 // Limit switch (NC) — e-stop for arm only
 #define PIN_LIMIT      10  // INPUT_PULLUP; HIGH = triggered
@@ -124,10 +125,11 @@ void armCoast() {
 }
 void armDriveFwd() {
   digitalWrite(PIN_ARM_R_PWM, LOW); delay(5);
-  analogWrite(PIN_ARM_L_PWM, ARM_PWM_SPEED);
+  analogWrite(PIN_ARM_L_PWM, ARM_PWM_FWD);
 }
 void armDriveBwd() {
-  analogWrite(PIN_ARM_L_PWM, 0); delay(5);
+  // brake-mode PWM: L_PWM = 255-BWD → effective backward duty = BWD/255
+  analogWrite(PIN_ARM_L_PWM, 255 - ARM_PWM_BWD); delay(5);
   digitalWrite(PIN_ARM_R_PWM, HIGH);
 }
 
