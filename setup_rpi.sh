@@ -196,7 +196,10 @@ User=$USER
 WorkingDirectory=$WEB_DIR
 Environment="CONTROLLER_API_URL=http://localhost:5000"
 ExecStartPre=docker build -t tastebox-web .
-ExecStart=docker run --rm -p 3000:3000 -e CONTROLLER_API_URL=http://host.docker.internal:5000 tastebox-web
+ExecStart=docker run --rm -p 3000:3000 \
+  --add-host=host.docker.internal:host-gateway \
+  -e CONTROLLER_API_URL=http://host.docker.internal:5000 \
+  tastebox-web
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=600

@@ -254,11 +254,9 @@ def main():
 
     run_demo_on_start = "--demo" in sys.argv
 
-    if "--rs485" in sys.argv:
-        idx = sys.argv.index("--rs485")
-        port = sys.argv[idx + 1] if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("--") else "/dev/ttyUSB0"
-        logger.info("mode: RS485  port=%s", port)
-        main_rs485(port=port, run_demo_on_start=run_demo_on_start)
+    if "--i2c" in sys.argv:
+        logger.info("mode: I2C  bus=1")
+        main_i2c(run_demo_on_start=run_demo_on_start)
     elif "--serial-nodes" in sys.argv:
         ports = [a for a in sys.argv if a.startswith('/dev/') or a.startswith('COM')]
         if len(ports) < 4:
@@ -276,8 +274,14 @@ def main():
         logger.info("mode: serial  ports=%s", ports[:4])
         main_serial(*ports[:4], run_demo_on_start=run_demo_on_start)
     else:
-        logger.info("mode: I2C  bus=1")
-        main_i2c(run_demo_on_start=run_demo_on_start)
+        # Default: RS485 on /dev/ttyUSB0; override with --rs485 /dev/ttyUSBx
+        if "--rs485" in sys.argv:
+            idx = sys.argv.index("--rs485")
+            port = sys.argv[idx + 1] if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("--") else "/dev/ttyUSB0"
+        else:
+            port = "/dev/ttyUSB0"
+        logger.info("mode: RS485  port=%s", port)
+        main_rs485(port=port, run_demo_on_start=run_demo_on_start)
 
 
 if __name__ == "__main__":

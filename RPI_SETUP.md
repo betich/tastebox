@@ -30,9 +30,9 @@
    sudo reboot
    ```
 
-4. Verify I2C devices are detected (should see 0x42, 0x43, 0x44, 0x45)
+4. Verify RS485 nodes are responding
    ```bash
-   i2cdetect -y 1
+   python controller/rs485_check.py /dev/ttyUSB0
    ```
 
 5. Start the controller API
@@ -97,8 +97,10 @@ journalctl -u tastebox-web -f
 sudo systemctl restart tastebox-controller
 sudo systemctl restart tastebox-web
 
-# Run controller manually (without systemd)
-cd controller && ../.venv/bin/python api.py
+# Run controller manually (without systemd)  — RS485 is the default
+cd controller && ../.venv/bin/python master.py
+# or with a non-default port:
+cd controller && ../.venv/bin/python master.py --rs485 /dev/ttyUSB1
 
 # Open serial monitor for a node
 .venv/bin/pio device monitor -d nodes/cooker --baud 115200
