@@ -144,18 +144,19 @@ const DEVICE_CONFIG: Record<Device, SubComponent[]> = {
 
   cutter: [
     {
-      id: "door", label: "Door / Clamp",
+      id: "door", label: "Door / Pinner",
       actions: [
-        { label: "Door Open",  command: "door_open"  },
-        { label: "Door Close", command: "door_close" },
-        { label: "Clamp",      command: "clamp"      },
-        { label: "Release",    command: "release"    },
+        { label: "Door Open",  command: "door_open"     },
+        { label: "Door Close", command: "door_close"    },
+        { label: "Hover",      command: "pinner_hover"  },
+        { label: "Pin",        command: "pinner_pin"    },
+        { label: "Stow",       command: "pinner_stow"   },
       ],
       face: {
-        a: { label: "Door Open",  command: "door_open"  },
-        b: { label: "Door Close", command: "door_close" },
-        x: { label: "Clamp",      command: "clamp"      },
-        y: { label: "Release",    command: "release"    },
+        a: { label: "Door Open",  command: "door_open"    },
+        b: { label: "Door Close", command: "door_close"   },
+        x: { label: "Pin",        command: "pinner_pin"   },
+        y: { label: "Stow",       command: "pinner_stow"  },
       },
     },
     {
@@ -271,8 +272,9 @@ export async function action({ request }: ActionFunctionArgs) {
     } else if (device === "cutter") {
       if (command === "door_open")       await post("/cutter/door",    { action: "open"     })
       if (command === "door_close")      await post("/cutter/door",    { action: "close"    })
-      if (command === "clamp")           await post("/cutter/clamp",   { action: "clamp"    })
-      if (command === "release")         await post("/cutter/clamp",   { action: "release"  })
+      if (command === "pinner_hover")    await post("/cutter/clamp",   { action: "hover"    })
+      if (command === "pinner_pin")      await post("/cutter/clamp",   { action: "pin"      })
+      if (command === "pinner_stow")     await post("/cutter/clamp",   { action: "stow"     })
       if (command === "roller_up")       await post("/cutter/roller",  { action: "up"       })
       if (command === "roller_down")     await post("/cutter/roller",  { action: "down"     })
       if (command === "roller_stop")     await post("/cutter/roller",  { action: "stop"     })

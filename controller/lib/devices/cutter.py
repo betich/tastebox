@@ -46,13 +46,18 @@ class CutterDevice(BaseDevice):
         val = max(0, min(65535, int(ms)))
         self.bus.write_bytes(self.address, REG_DUR_HI, val >> 8, val & 0xFF)
 
-    # Door
-    def open_door(self):    self.bus.write_bytes(self.address, REG_DOOR_CMD,    0x01)
-    def close_door(self):   self.bus.write_bytes(self.address, REG_DOOR_CMD,    0x02)
+    # Door (angle-based: close=0°, open=60°)
+    REG_DOOR_ANG = 0x21
+    def open_door(self):    self.bus.write_bytes(self.address, 0x21, 60)
+    def close_door(self):   self.bus.write_bytes(self.address, 0x21,  0)
 
-    # Pinner
-    def clamp(self):        self.bus.write_bytes(self.address, REG_PINNER_CMD,  0x01)
-    def release(self):      self.bus.write_bytes(self.address, REG_PINNER_CMD,  0x02)
+    # Pinner (angle-based: stow=0°, pin=30°, hover=60°)
+    def pinner_hover(self): self.bus.write_bytes(self.address, 0x20, 60)
+    def pinner_pin(self):   self.bus.write_bytes(self.address, 0x20, 30)
+    def pinner_stow(self):  self.bus.write_bytes(self.address, 0x20,  0)
+    # keep old names as aliases
+    def clamp(self):        self.pinner_pin()
+    def release(self):      self.pinner_stow()
 
     # Cutter (register 0x13)
     def cutter_close(self): self.bus.write_bytes(self.address, REG_CUTTER_CMD, 0x01)

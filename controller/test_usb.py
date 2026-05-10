@@ -14,7 +14,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from lib.usb_discover import discover, NODE_ADDRESSES, BAUD, BOOT_WAIT
+from lib.usb_discover import discover_open, NODE_ADDRESSES, BAUD, BOOT_WAIT
 from lib.node_serial_bus import NodeSerialBus
 from lib.protocol import encode_read
 
@@ -52,15 +52,16 @@ def debug_port(port: str):
         print(f"  [{port}] SerialException: {e}")
 
 
-def test_node(name: str, addr: int, port: str) -> bool:
+def test_node(name: str, addr: int, ser) -> bool:
+    port = ser.port
     print(f"  [{name}] 0x{addr:02X} on {port} ...", end=" ", flush=True)
     try:
         bus = NodeSerialBus(port, baud=BAUD, timeout=1.0)
-        bus.open()
+        bus.attach(ser)
         t0 = time.monotonic()
         val = bus.read_byte(addr, PROBE_REG)
         ms = round((time.monotonic() - t0) * 1000)
-        bus.close()
+        ser.close()
         print(f"OK  reg[0x00]=0x{val:02X}  ({ms} ms)")
         return True
     except Exception as e:
@@ -85,7 +86,7 @@ def main():
 
     print("── USB node test ─────────────────────────────────")
     print(f"Scanning ports (boot wait: {BOOT_WAIT}s) ...")
-    found = discover()
+    found = discover_open()
 
     if not found:
         print("No nodes found. Try --debug to see raw port output.")
@@ -94,9 +95,9 @@ def main():
     print(f"Found {len(found)}/4 node(s):\n")
 
     results = {}
-    for addr, port in sorted(found.items()):
+    for addr, ser in sorted(found.items()):
         name = NODE_ADDRESSES[addr]
-        results[name] = test_node(name, addr, port)
+        results[name] = test_node(name, addr, ser)
 
     missing = [NODE_ADDRESSES[a] for a in NODE_ADDRESSES if a not in found]
     for name in missing:

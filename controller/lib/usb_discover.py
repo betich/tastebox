@@ -28,21 +28,27 @@ PROBE_TIMEOUT = 0.5
 BOOT_WAIT = 2.5  # seconds to wait after port open for bootloader + sketch startup
 
 
-def _probe_port(path: str) -> int | None:
-    """Open one serial port and return the node address that responds, or None."""
+def _probe_port(path: str) -> tuple[int, serial.Serial] | None:
+    """Open one serial port and return (node_address, open_serial) if a node responds.
+
+    The serial is left open on success so callers can reuse it without a second
+    open() call (which would reset the Arduino again).  On failure the port is
+    closed internally and None is returned.
+    """
     try:
-        with serial.Serial(path, BAUD, timeout=PROBE_TIMEOUT) as ser:
-            time.sleep(BOOT_WAIT)  # wait for bootloader to hand off to sketch
+        ser = serial.Serial(path, BAUD, timeout=PROBE_TIMEOUT)
+        time.sleep(BOOT_WAIT)  # wait for bootloader to hand off to sketch
+        ser.reset_input_buffer()
+        for addr in NODE_ADDRESSES:
             ser.reset_input_buffer()
-            for addr in NODE_ADDRESSES:
-                ser.reset_input_buffer()
-                ser.write(encode_read(addr, 0x00))
-                raw = ser.readline().decode(errors="ignore")
-                if not raw.startswith(f"@{addr:02X} "):
-                    continue
-                parts = raw.split()
-                if len(parts) >= 2 and parts[1] not in ("R", "W"):
-                    return addr
+            ser.write(encode_read(addr, 0x00))
+            raw = ser.readline().decode(errors="ignore")
+            if not raw.startswith(f"@{addr:02X} "):
+                continue
+            parts = raw.split()
+            if len(parts) >= 2 and parts[1] not in ("R", "W"):
+                return addr, ser
+        ser.close()
     except serial.SerialException:
         pass
     return None
@@ -66,11 +72,47 @@ def discover() -> dict[int, str]:
         future_to_port = {pool.submit(_probe_port, p): p for p in ports}
         for future in concurrent.futures.as_completed(future_to_port):
             path = future_to_port[future]
-            addr = future.result()
-            if addr is not None:
+            result = future.result()
+            if result is not None:
+                addr, ser = result
+                ser.close()  # discover() only needs the path
                 name = NODE_ADDRESSES[addr]
                 logger.info("usb-discover: 0x%02X (%s) → %s", addr, name, path)
                 found[addr] = path
+            else:
+                logger.debug("usb-discover: no node on %s", path)
+
+    missing = [NODE_ADDRESSES[a] for a in NODE_ADDRESSES if a not in found]
+    if missing:
+        logger.warning("usb-discover: nodes not found: %s", ", ".join(missing))
+    return found
+
+
+def discover_open() -> dict[int, serial.Serial]:
+    """Scan all USB serial ports and return {node_address: open_serial}.
+
+    Unlike discover(), the serial connections are kept open and ready for
+    immediate use — no second open() call, no second Arduino reset.
+    Caller is responsible for closing the serials when done.
+    """
+    ports = sorted(glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*"))
+    if not ports:
+        logger.warning("usb-discover: no serial ports found")
+        return {}
+
+    logger.info("usb-discover: scanning %d port(s): %s", len(ports), ", ".join(ports))
+    found: dict[int, serial.Serial] = {}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(ports)) as pool:
+        future_to_port = {pool.submit(_probe_port, p): p for p in ports}
+        for future in concurrent.futures.as_completed(future_to_port):
+            path = future_to_port[future]
+            result = future.result()
+            if result is not None:
+                addr, ser = result
+                name = NODE_ADDRESSES[addr]
+                logger.info("usb-discover: 0x%02X (%s) → %s", addr, name, path)
+                found[addr] = ser
             else:
                 logger.debug("usb-discover: no node on %s", path)
 

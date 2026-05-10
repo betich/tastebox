@@ -21,6 +21,11 @@ class RS485Bus:
     def open(self):
         self._ser = serial.Serial(self._port, self._baud, timeout=self._timeout)
 
+    def attach(self, ser: serial.Serial):
+        """Use an already-open serial connection (avoids triggering a reset on reopen)."""
+        self._ser = ser
+        self._ser.timeout = self._timeout
+
     def close(self):
         if self._ser and self._ser.is_open:
             self._ser.close()

@@ -166,20 +166,22 @@ class _NullBus:
 
 def main_usb_auto(run_demo_on_start: bool = False, rs485_monitor_port: str | None = None):
     """Default mode: auto-discover nodes on USB serial ports."""
-    from lib.usb_discover import discover, NODE_ADDRESSES, BAUD
+    from lib.usb_discover import discover_open, NODE_ADDRESSES, BAUD
     from lib.node_serial_bus import NodeSerialBus
     from lib.devices import CookerDevice as _Cooker, PlatingArmDevice as _Plater
     from lib.devices import IngredientDevice as _Ingredient, CutterDevice as _Cutter
 
     display = SSD1306Display()
-    port_map = discover()  # {addr: port_path}
+    # discover_open() keeps ports open so NodeSerialBus.attach() can use them
+    # without triggering a second Arduino reset.
+    ser_map = discover_open()  # {addr: open_serial}
 
     live_buses: dict[int, NodeSerialBus] = {}  # addr → open bus (NullBus entries omitted)
 
     def _make_bus(addr: int):
-        if addr in port_map:
-            b = NodeSerialBus(port_map[addr], baud=BAUD)
-            b.open()
+        if addr in ser_map:
+            b = NodeSerialBus(ser_map[addr].port, baud=BAUD)
+            b.attach(ser_map[addr])
             live_buses[addr] = b
             return b
         return _NullBus()
@@ -201,18 +203,20 @@ def main_usb_auto(run_demo_on_start: bool = False, rs485_monitor_port: str | Non
         if not offline:
             return
         logger.info("rediscover: %d offline node(s), scanning USB ports", len(offline))
-        found = discover()
-        for addr, port in found.items():
+        found = discover_open()
+        for addr, ser in found.items():
             if addr not in offline:
+                ser.close()
                 continue
             try:
-                new_bus = NodeSerialBus(port, baud=BAUD)
-                new_bus.open()
+                new_bus = NodeSerialBus(ser.port, baud=BAUD)
+                new_bus.attach(ser)
                 devices_by_addr[addr].bus = new_bus
                 live_buses[addr] = new_bus
-                logger.info("rediscover: 0x%02X reconnected on %s", addr, port)
+                logger.info("rediscover: 0x%02X reconnected on %s", addr, ser.port)
             except Exception as e:
-                logger.warning("rediscover: failed to open %s for 0x%02X: %s", port, addr, e)
+                ser.close()
+                logger.warning("rediscover: failed for 0x%02X: %s", addr, e)
 
     devices = [cooker, plater, ingredient, cutter]
     results = probe_all(devices)

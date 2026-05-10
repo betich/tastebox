@@ -9,7 +9,7 @@
 // PCA9685:          SDA=A4, SCL=A5, OE=D5,  I2C addr=0x40
 //   Ch  0: Pinner servo
 //   Ch  4: Door servo
-//   Ch  8: L Salt & Pepper dispenser
+//   Ch  9: L Salt & Pepper dispenser
 //   Ch 15: R Salt & Pepper dispenser
 // Pump A MOSFET:    PWM=D6   (0-255)
 // Pump B MOSFET:    PWM=D11  (0-255)
@@ -35,7 +35,7 @@
 #define PCA_ADDR        0x40
 #define PCA_CH_PINNER    0
 #define PCA_CH_DOOR      4
-#define PCA_CH_L_DISP    8
+#define PCA_CH_L_DISP    9
 #define PCA_CH_R_DISP   15
 
 // Servo pulse ticks at 50 Hz (4096 ticks / 20 ms)

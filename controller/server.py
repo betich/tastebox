@@ -340,11 +340,12 @@ def cutter_door():
 
 @app.route("/cutter/clamp", methods=["POST"])
 def cutter_clamp():
-    action = (request.get_json() or {}).get("action", "release")
+    action = (request.get_json() or {}).get("action", "stow")
     def _do():
         with _lock:
-            if action == "clamp": _cutter.clamp()
-            else:                 _cutter.release()
+            if   action == "hover": _cutter.pinner_hover()
+            elif action == "pin":   _cutter.pinner_pin()
+            else:                   _cutter.pinner_stow()
     return _safe(_do)
 
 
