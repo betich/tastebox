@@ -18,19 +18,23 @@
 //   // in loop():
 //   serial_handler.poll(Serial);
 
+typedef void (*PlainTextHandler)(const char* line, Stream& s);
+
 class SerialFrameHandler {
 public:
     explicit SerialFrameHandler(uint8_t addr);
 
     void setDefaultReadHandler(DefaultReadHandler fn);
     void setDefaultWriteHandler(DefaultWriteHandler fn);
+    void setPlainTextHandler(PlainTextHandler fn);  // called for non-@ lines
 
     void poll(Stream& s);  // call from loop()
 
 private:
-    uint8_t             _addr;
+    uint8_t          _addr;
     DefaultReadHandler  _read;
     DefaultWriteHandler _write;
+    PlainTextHandler    _plain;
     char    _buf[64];
     uint8_t _buf_len;
 

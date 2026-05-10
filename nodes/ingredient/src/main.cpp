@@ -234,12 +234,12 @@ void setup() {
   serial_handler.setDefaultReadHandler(processRead);
   serial_handler.setDefaultWriteHandler(processWrite);
 
-  Serial.println("[ingredient] RS485 node 0x44 ready");
+  Serial.println("[ingredient] USB node 0x44 ready (RS485 secondary)");
 }
 
 void pollAndDispatch() {
-  node.poll();
   serial_handler.poll(Serial);
+  node.poll();
   if (pending_cmd) {
     handleCommand(pending_cmd);
     pending_cmd = 0;

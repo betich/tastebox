@@ -156,6 +156,77 @@ def main_rs485(port: str = "/dev/ttyUSB0", run_demo_on_start: bool = False):
             logger.info("shutting down")
 
 
+class _NullBus:
+    """Placeholder for a node that was not found during USB auto-discovery."""
+    def read_byte(self, addr, reg):            raise IOError(f"node 0x{addr:02X} not connected")
+    def write_bytes(self, addr, reg, *data):   raise IOError(f"node 0x{addr:02X} not connected")
+    def read_int16(self, addr, hi, lo):        raise IOError(f"node 0x{addr:02X} not connected")
+    def probe(self, addr):                     return False
+
+
+def main_usb_auto(run_demo_on_start: bool = False, rs485_monitor_port: str | None = None):
+    """Default mode: auto-discover nodes on USB serial ports."""
+    from lib.usb_discover import discover, NODE_ADDRESSES, BAUD
+    from lib.node_serial_bus import NodeSerialBus
+    from lib.devices import CookerDevice as _Cooker, PlatingArmDevice as _Plater
+    from lib.devices import IngredientDevice as _Ingredient, CutterDevice as _Cutter
+
+    display = SSD1306Display()
+    port_map = discover()  # {addr: port_path}
+
+    def _make_bus(addr: int):
+        if addr in port_map:
+            b = NodeSerialBus(port_map[addr], baud=BAUD)
+            b.open()
+            return b
+        return _NullBus()
+
+    cooker_bus     = _make_bus(0x42)
+    plater_bus     = _make_bus(0x43)
+    ingredient_bus = _make_bus(0x44)
+    cutter_bus     = _make_bus(0x45)
+
+    cooker     = _Cooker(cooker_bus)
+    plater     = _Plater(plater_bus)
+    ingredient = _Ingredient(ingredient_bus)
+    cutter     = _Cutter(cutter_bus)
+
+    devices = [cooker, plater, ingredient, cutter]
+    results = probe_all(devices)
+    online  = {d for d, ok in results.items() if ok}
+    offline = set(devices) - online
+
+    if offline:
+        names = ", ".join(d.name for d in offline)
+        logger.warning("offline devices will be skipped: %s", names)
+
+    if rs485_monitor_port:
+        server.init_rs485_monitor(rs485_monitor_port)
+
+    server.init(cooker, plater, ingredient, cutter, display)
+    server.start()
+    display.set_state(MachineState.IDLE)
+
+    if online and run_demo_on_start:
+        demo(cooker, plater, ingredient, cutter, online)
+    elif online:
+        logger.info("startup demo disabled — waiting for explicit commands")
+    else:
+        logger.warning("no devices found — running headless (API still available)")
+
+    logger.info("serving — Ctrl-C to quit")
+    opened_buses = [b for b in (cooker_bus, plater_bus, ingredient_bus, cutter_bus)
+                    if isinstance(b, NodeSerialBus)]
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("shutting down")
+    finally:
+        for b in opened_buses:
+            b.close()
+
+
 def main_serial_nodes(cooker_port: str, plater_port: str,
                       ingredient_port: str, cutter_port: str,
                       run_demo_on_start: bool = False):
@@ -254,9 +325,21 @@ def main():
 
     run_demo_on_start = "--demo" in sys.argv
 
+    # Optional RS-485 monitor port for admin debug badge
+    rs485_monitor_port = None
+    if "--rs485-monitor" in sys.argv:
+        idx = sys.argv.index("--rs485-monitor")
+        if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("--"):
+            rs485_monitor_port = sys.argv[idx + 1]
+
     if "--i2c" in sys.argv:
         logger.info("mode: I2C  bus=1")
         main_i2c(run_demo_on_start=run_demo_on_start)
+    elif "--rs485" in sys.argv:
+        idx = sys.argv.index("--rs485")
+        port = sys.argv[idx + 1] if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("--") else "/dev/ttyUSB0"
+        logger.info("mode: RS485  port=%s", port)
+        main_rs485(port=port, run_demo_on_start=run_demo_on_start)
     elif "--serial-nodes" in sys.argv:
         ports = [a for a in sys.argv if a.startswith('/dev/') or a.startswith('COM')]
         if len(ports) < 4:
@@ -274,14 +357,11 @@ def main():
         logger.info("mode: serial  ports=%s", ports[:4])
         main_serial(*ports[:4], run_demo_on_start=run_demo_on_start)
     else:
-        # Default: RS485 on /dev/ttyUSB0; override with --rs485 /dev/ttyUSBx
-        if "--rs485" in sys.argv:
-            idx = sys.argv.index("--rs485")
-            port = sys.argv[idx + 1] if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("--") else "/dev/ttyUSB0"
-        else:
-            port = "/dev/ttyUSB0"
-        logger.info("mode: RS485  port=%s", port)
-        main_rs485(port=port, run_demo_on_start=run_demo_on_start)
+        # Default: USB auto-discover nodes across all /dev/ttyUSB* and /dev/ttyACM* ports
+        logger.info("mode: USB auto-discover%s",
+                    f"  rs485-monitor={rs485_monitor_port}" if rs485_monitor_port else "")
+        main_usb_auto(run_demo_on_start=run_demo_on_start,
+                      rs485_monitor_port=rs485_monitor_port)
 
 
 if __name__ == "__main__":

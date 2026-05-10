@@ -22,6 +22,13 @@ _ingredient = None
 _cutter     = None
 _display: SSD1306Display | None = None
 
+# RS-485 monitor — optional, populated by init_rs485_monitor()
+_rs485_available = False
+_rs485_node_status: dict[str, bool] = {
+    "cooker": False, "plating": False, "ingredient": False, "cutter": False
+}
+_RS485_ADDRS = {"cooker": 0x42, "plating": 0x43, "ingredient": 0x44, "cutter": 0x45}
+
 
 def init(cooker, plater, ingredient, cutter, display: SSD1306Display | None = None):
     global _cooker, _plater, _ingredient, _cutter, _display
@@ -30,6 +37,32 @@ def init(cooker, plater, ingredient, cutter, display: SSD1306Display | None = No
     _ingredient = ingredient
     _cutter     = cutter
     _display    = display
+
+
+def init_rs485_monitor(port: str):
+    """Open a secondary RS-485 bus used only for admin debug status badges."""
+    global _rs485_available
+    from lib.rs485_bus import RS485Bus
+    try:
+        bus = RS485Bus(port)
+        bus.open()
+        _rs485_available = True
+        t = threading.Thread(target=_rs485_probe_loop, args=(bus,),
+                             daemon=True, name="rs485-monitor")
+        t.start()
+        logger.info("RS-485 monitor active on %s", port)
+    except Exception as e:
+        logger.warning("RS-485 monitor could not open %s: %s", port, e)
+
+
+def _rs485_probe_loop(bus):
+    while True:
+        time.sleep(5)
+        for name, addr in _RS485_ADDRS.items():
+            try:
+                _rs485_node_status[name] = bus.probe(addr)
+            except Exception:
+                _rs485_node_status[name] = False
 
 
 def start(port: int = 5000):
@@ -104,9 +137,18 @@ def status():
                 **(_cutter.get_status_flags() if cutter_ok else {
                     "door_busy": False, "clamp_busy": False,
                     "roller_busy": False, "scissor_busy": False,
-                    "pepper_busy": False, "pump_busy": False, "salt_busy": False,
+                    "pepper_busy": False, "salt_busy": False,
+                    "pump_a_busy": False, "pump_b_busy": False,
                 }),
             }
+
+        rs485_data = {
+            "available":   _rs485_available,
+            "cooker":      _rs485_node_status["cooker"],
+            "plating":     _rs485_node_status["plating"],
+            "ingredient":  _rs485_node_status["ingredient"],
+            "cutter":      _rs485_node_status["cutter"],
+        }
 
         return jsonify({
             "ok":         True,
@@ -114,6 +156,7 @@ def status():
             "plating":    plater_data,
             "ingredient": ing_data,
             "cutter":     cutter_data,
+            "rs485":      rs485_data,
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -328,16 +371,6 @@ def cutter_pepper():
     return _safe(_do)
 
 
-@app.route("/cutter/pump", methods=["POST"])
-def cutter_pump():
-    action = (request.get_json() or {}).get("action", "off")
-    def _do():
-        with _lock:
-            if action == "on": _cutter.pump_on()
-            else:              _cutter.pump_off()
-    return _safe(_do)
-
-
 @app.route("/cutter/salt", methods=["POST"])
 def cutter_salt():
     action = (request.get_json() or {}).get("action", "stop")
@@ -346,6 +379,20 @@ def cutter_salt():
             if action == "dispense": _cutter.salt_dispense()
             else:                    _cutter.salt_stop()
     return _safe(_do)
+
+
+@app.route("/cutter/pump_a", methods=["POST"])
+def cutter_pump_a():
+    data = request.get_json() or {}
+    pwm  = int(data.get("pwm", 255 if data.get("action") == "on" else 0))
+    return _safe(lambda: _cutter.set_pump_a(pwm) or {})
+
+
+@app.route("/cutter/pump_b", methods=["POST"])
+def cutter_pump_b():
+    data = request.get_json() or {}
+    pwm  = int(data.get("pwm", 255 if data.get("action") == "on" else 0))
+    return _safe(lambda: _cutter.set_pump_b(pwm) or {})
 
 
 @app.route("/cutter/duration", methods=["POST"])

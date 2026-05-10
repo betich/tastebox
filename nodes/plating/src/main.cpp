@@ -439,12 +439,12 @@ void setup() {
   serial_handler.setDefaultReadHandler(processRead);
   serial_handler.setDefaultWriteHandler(processWrite);
 
-  Serial.println("[plater] RS485 node 0x43 ready");
+  Serial.println("[plater] USB node 0x43 ready (RS485 secondary)");
 }
 
 void loop() {
-  node.poll();
   serial_handler.poll(Serial);
+  node.poll();
   if (limitHit()) {
     limit_triggered = true;
   }

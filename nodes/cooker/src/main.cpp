@@ -3,15 +3,15 @@
 #include <SerialFrameHandler.h>
 
 // Encoder spoofer / cooktop I/O
-#define ENC_E  2   // orange - encoder A
+#define ENC_E  4   // orange - encoder A
 #define ENC_D  3   // blue   - encoder B
-#define ENC_C  9   // yellow - click/button  (moved from D4 to free D9)
-#define BUZ    8   // buzzer output
+#define ENC_C  2   // yellow - click/button
+#define BUZ    11  // green  - buzzer output
 
 // RS-485 (SoftwareSerial)
-#define PIN_RS485_RX    4
-#define PIN_RS485_TX    5
-#define PIN_RS485_DE_RE 6
+#define PIN_RS485_RX    5
+#define PIN_RS485_TX    6
+#define PIN_RS485_DE_RE 7
 
 #define NODE_ADDR  0x42
 #define STEP_DELAY 5  // ms between quadrature steps
@@ -26,6 +26,21 @@
 
 RS485Node          node(NODE_ADDR, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
 SerialFrameHandler serial_handler(NODE_ADDR);
+
+void handlePlainText(const char* line, Stream& s) {
+  s.print("[dbg] rx '"); s.print(line); s.println("'");
+  if (strcmp(line, "help") == 0) {
+    s.println("Cooker node 0x42 — serial commands:");
+    s.println("  help          show this message");
+    s.println("  @42 R 00      read pos hi byte");
+    s.println("  @42 R 01      read pos lo byte");
+    s.println("  @42 R 03      read & clear event flags (b0=CW b1=CCW b2=CLICK)");
+    s.println("  @42 W 10 01   CMD: home (pos=0)");
+    s.println("  @42 W 10 04   CMD: click");
+    s.println("  @42 W 11 HH LL  set target position (int16 hi lo)");
+    s.println("Pins: ENC_A=D4 ENC_B=D3 BTN=D2 BUZ=D11 | RS485(2nd) RO=D5 DI=D6 DE/RE=D7");
+  }
+}
 
 // ── Encoder spoofer ──────────────────────────────────────────
 
@@ -116,14 +131,15 @@ void setup() {
 
   serial_handler.setDefaultReadHandler(processRead);
   serial_handler.setDefaultWriteHandler(processWrite);
+  serial_handler.setPlainTextHandler(handlePlainText);
 
   beep();
-  Serial.println("[cooker] RS485 node 0x42 ready");
+  Serial.println("[cooker] USB node 0x42 ready (RS485 secondary)");
 }
 
 void loop() {
-  node.poll();
   serial_handler.poll(Serial);
+  node.poll();
 
   if (pendingBeep)  { pendingBeep = false; beep(); }
 

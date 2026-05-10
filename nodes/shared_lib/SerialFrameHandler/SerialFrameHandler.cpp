@@ -3,19 +3,22 @@
 #include <stdlib.h>
 
 SerialFrameHandler::SerialFrameHandler(uint8_t addr)
-    : _addr(addr), _read(nullptr), _write(nullptr), _buf_len(0)
+    : _addr(addr), _read(nullptr), _write(nullptr), _plain(nullptr), _buf_len(0)
 {}
 
 void SerialFrameHandler::setDefaultReadHandler(DefaultReadHandler fn)  { _read  = fn; }
 void SerialFrameHandler::setDefaultWriteHandler(DefaultWriteHandler fn) { _write = fn; }
+void SerialFrameHandler::setPlainTextHandler(PlainTextHandler fn)       { _plain = fn; }
 
 void SerialFrameHandler::poll(Stream& s) {
     while (s.available()) {
         char c = (char)s.read();
-        if (c == '\n') {
+        if (c == '\n' || c == '\r') {
             _buf[_buf_len] = '\0';
             if (_buf_len > 0 && _buf[0] == '@')
                 _processFrame(s);
+            else if (_buf_len > 0 && _plain)
+                _plain(_buf, s);
             _buf_len = 0;
         } else if (_buf_len < 63) {
             _buf[_buf_len++] = c;

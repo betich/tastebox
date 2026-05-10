@@ -7,7 +7,7 @@ RS485Node::RS485Node(uint8_t addr, uint8_t rx_pin, uint8_t tx_pin,
     : _addr(addr), _de_re_pin(de_re_pin),
       _serial(rx_pin, tx_pin),
       _default_read(nullptr), _default_write(nullptr),
-      _read_count(0), _write_count(0), _buf_len(0)
+      _read_count(0), _write_count(0), _buf_len(0), _bytes_received(0)
 {}
 
 void RS485Node::begin() {
@@ -33,6 +33,7 @@ void RS485Node::onWrite(uint8_t reg, WriteHandler fn) {
 void RS485Node::poll() {
     while (_serial.available()) {
         char c = (char)_serial.read();
+        _bytes_received++;
         if (c == '\n') {
             _buf[_buf_len] = '\0';
             if (_buf_len > 0 && _buf[0] == '@')

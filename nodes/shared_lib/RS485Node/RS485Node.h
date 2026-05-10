@@ -22,6 +22,8 @@ public:
     void begin();
     void poll();
 
+    uint32_t bytesReceived() const { return _bytes_received; }
+
     // Drop-in migration: wire existing processRead / processWrite as defaults
     void setDefaultReadHandler(DefaultReadHandler fn);
     void setDefaultWriteHandler(DefaultWriteHandler fn);
@@ -45,8 +47,9 @@ private:
     uint8_t    _read_count;
     uint8_t    _write_count;
 
-    char    _buf[64];
-    uint8_t _buf_len;
+    char     _buf[64];
+    uint8_t  _buf_len;
+    uint32_t _bytes_received;
 
     void _processFrame();
     void _send(const char* msg);

@@ -13,6 +13,7 @@ interface StatusData {
   plating?:    { online: boolean; m1_busy: boolean; m2_busy: boolean; m1_pos: number; arm: number; lid: number; lid_busy: boolean }
   ingredient?: { online: boolean; a_busy: boolean; b_busy: boolean; c_busy: boolean }
   cutter?:     { online: boolean; door_busy: boolean; clamp_busy: boolean; roller_busy: boolean; scissor_busy: boolean }
+  rs485?:      { available: boolean; cooker: boolean; plating: boolean; ingredient: boolean; cutter: boolean }
 }
 
 type SubAction    = { label: string; command: string; value?: number }
@@ -427,8 +428,9 @@ function StatusRow({ status, device }: { status: StatusData | null; device: Devi
 
 // ── Device status grid ────────────────────────────────────────────────────────
 
-function DeviceCard({ id, addr, ctrlOnline, detected, detail }: {
+function DeviceCard({ id, addr, ctrlOnline, detected, detail, rs485Online }: {
   id: Device; addr: string; ctrlOnline: boolean; detected: boolean; detail?: string
+  rs485Online?: boolean | null
 }) {
   return (
     <div className="bg-neutral-100 rounded-2xl p-5 flex flex-col gap-2">
@@ -441,6 +443,12 @@ function DeviceCard({ id, addr, ctrlOnline, detected, detail }: {
         {!ctrlOnline ? "ctrl offline" : detected ? "detected" : "not found"}
       </span>
       {detected && detail && <span className="text-[13px] text-neutral-600 font-mono leading-snug">{detail}</span>}
+      {rs485Online != null && (
+        <div className="flex items-center gap-1.5 pt-0.5">
+          <div className={`w-2 h-2 rounded-full shrink-0 ${rs485Online ? "bg-green-400" : "bg-red-400"}`} />
+          <span className="text-[11px] text-neutral-400 font-mono">RS485 {rs485Online ? "ok" : "n/a"}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -449,16 +457,23 @@ function DeviceStatusGrid({ status }: { status: StatusData | null }) {
   const ok = status?.ok ?? false
   const c = status?.cooker;     const p = status?.plating
   const i = status?.ingredient; const x = status?.cutter
+  const rs = status?.rs485
   const ARM = ["at A", "at B", "moving"]
+  const rs485 = (key: "cooker" | "plating" | "ingredient" | "cutter"): boolean | null =>
+    rs?.available ? (rs[key] ?? null) : null
   return (
     <div className="grid grid-cols-4 gap-4">
-      <DeviceCard id="cooker"     addr="RS485 #01" ctrlOnline={ok} detected={c?.online ?? false}
+      <DeviceCard id="cooker"     addr="USB #01" ctrlOnline={ok} detected={c?.online ?? false}
+        rs485Online={rs485("cooker")}
         detail={c?.online ? `pos ${c.position} · ${c.on ? "ON" : "off"}` : undefined} />
-      <DeviceCard id="plating"    addr="RS485 #02" ctrlOnline={ok} detected={p?.online ?? false}
+      <DeviceCard id="plating"    addr="USB #02" ctrlOnline={ok} detected={p?.online ?? false}
+        rs485Online={rs485("plating")}
         detail={p?.online ? `pan ${p.m1_pos} · arm ${ARM[p.arm] ?? p.arm} · lid ${["closed","open","moving"][p.lid] ?? p.lid}` : undefined} />
-      <DeviceCard id="ingredient" addr="RS485 #03" ctrlOnline={ok} detected={i?.online ?? false}
+      <DeviceCard id="ingredient" addr="USB #03" ctrlOnline={ok} detected={i?.online ?? false}
+        rs485Online={rs485("ingredient")}
         detail={i?.online ? `A:${i.a_busy?"busy":"idle"} B:${i.b_busy?"busy":"idle"} C:${i.c_busy?"busy":"idle"}` : undefined} />
-      <DeviceCard id="cutter"     addr="RS485 #04" ctrlOnline={ok} detected={x?.online ?? false}
+      <DeviceCard id="cutter"     addr="USB #04" ctrlOnline={ok} detected={x?.online ?? false}
+        rs485Online={rs485("cutter")}
         detail={x?.online ? `door:${x.door_busy?"busy":"idle"} clamp:${x.clamp_busy?"busy":"idle"}` : undefined} />
     </div>
   )
