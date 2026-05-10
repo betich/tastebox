@@ -36,7 +36,7 @@
 #define PIN_LIMIT      10  // INPUT_PULLUP; HIGH = triggered
 
 #define DEFAULT_ARM_DUR_MS      4000
-#define DEFAULT_LID_DUR_MS      4700
+#define DEFAULT_LID_DUR_MS      19500
 #define DEFAULT_LID_OPEN_EXTRA   600  // extra ms for open only — accounts for initial tension
 
 // ── RS485 ───────────────────────────────────────────────────
