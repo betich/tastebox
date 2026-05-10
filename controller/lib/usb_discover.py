@@ -25,14 +25,15 @@ NODE_ADDRESSES: dict[int, str] = {
 
 BAUD = 115200
 PROBE_TIMEOUT = 0.5
+BOOT_WAIT = 2.5  # seconds to wait after port open for bootloader + sketch startup
 
 
 def _probe_port(path: str) -> int | None:
     """Open one serial port and return the node address that responds, or None."""
     try:
-        with serial.Serial(path, BAUD, timeout=PROBE_TIMEOUT,
-                           dsrdtr=False, rtscts=False) as ser:
-            time.sleep(0.1)  # let any startup noise drain
+        with serial.Serial(path, BAUD, timeout=PROBE_TIMEOUT) as ser:
+            time.sleep(BOOT_WAIT)  # wait for bootloader to hand off to sketch
+            ser.reset_input_buffer()
             for addr in NODE_ADDRESSES:
                 ser.reset_input_buffer()
                 ser.write(encode_read(addr, 0x00))

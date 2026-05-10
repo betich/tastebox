@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """USB connectivity test for tastebox nodes.
 
-Discovers all nodes on USB serial ports, pings each one, reads a status
-register, and prints a summary.  Run from the controller/ directory:
-
+Normal run:
     python test_usb.py
+
+Debug mode (shows raw bytes received on every port):
+    python test_usb.py --debug
 """
 
 import sys
@@ -13,12 +14,42 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from lib.usb_discover import discover, NODE_ADDRESSES, BAUD
+from lib.usb_discover import discover, NODE_ADDRESSES, BAUD, BOOT_WAIT
 from lib.node_serial_bus import NodeSerialBus
+from lib.protocol import encode_read
 
-ADDR_NAMES = {v: k for k, v in NODE_ADDRESSES.items()}  # name → addr, flip it
-# REG 0x00 is a valid readable register on every node
 PROBE_REG = 0x00
+
+
+def debug_port(port: str):
+    """Open port, wait for boot, dump everything received, then probe all addresses."""
+    import serial
+    print(f"\n  [{port}] opening at {BAUD} baud ...")
+    try:
+        with serial.Serial(port, BAUD, timeout=BOOT_WAIT) as ser:
+            print(f"  [{port}] waiting {BOOT_WAIT}s for bootloader ...")
+            time.sleep(BOOT_WAIT)
+            # Drain and show startup noise
+            waiting = ser.in_waiting
+            if waiting:
+                noise = ser.read(waiting).decode(errors="replace")
+                print(f"  [{port}] startup output ({waiting} bytes):")
+                for line in noise.splitlines():
+                    print(f"           > {line}")
+            else:
+                print(f"  [{port}] no startup output received")
+            ser.reset_input_buffer()
+            # Probe all addresses
+            for addr in NODE_ADDRESSES:
+                name = NODE_ADDRESSES[addr]
+                ser.reset_input_buffer()
+                cmd = encode_read(addr, PROBE_REG)
+                print(f"  [{port}] sending {cmd.strip()} ...", end=" ", flush=True)
+                ser.write(cmd)
+                raw = ser.readline()
+                print(repr(raw))
+    except serial.SerialException as e:
+        print(f"  [{port}] SerialException: {e}")
 
 
 def test_node(name: str, addr: int, port: str) -> bool:
@@ -38,12 +69,26 @@ def test_node(name: str, addr: int, port: str) -> bool:
 
 
 def main():
+    debug = "--debug" in sys.argv
+
+    if debug:
+        import glob
+        ports = sorted(glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*"))
+        print("── USB debug mode ────────────────────────────────")
+        if not ports:
+            print("No serial ports found.")
+            sys.exit(1)
+        print(f"Found ports: {', '.join(ports)}")
+        for port in ports:
+            debug_port(port)
+        sys.exit(0)
+
     print("── USB node test ─────────────────────────────────")
-    print("Scanning ports...")
+    print(f"Scanning ports (boot wait: {BOOT_WAIT}s) ...")
     found = discover()
 
     if not found:
-        print("No nodes found. Check USB cables and hub.")
+        print("No nodes found. Try --debug to see raw port output.")
         sys.exit(1)
 
     print(f"Found {len(found)}/4 node(s):\n")
@@ -63,8 +108,7 @@ def main():
     all_ok = True
     for name in ("cooker", "plating", "ingredient", "cutter"):
         ok = results.get(name, False)
-        status = "OK" if ok else "MISSING"
-        print(f"  {name:<12} {status}")
+        print(f"  {name:<12} {'OK' if ok else 'MISSING'}")
         if not ok:
             all_ok = False
 
