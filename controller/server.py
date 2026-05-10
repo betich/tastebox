@@ -411,6 +411,20 @@ def cutter_duration():
     return _safe(lambda: _cutter.set_duration(ms) or {})
 
 
+# ── USB rescan ────────────────────────────────────────────────────────────────
+
+@app.route("/scan", methods=["POST"])
+def scan():
+    if _rediscover_fn is None:
+        return jsonify({"ok": False, "error": "not in USB auto mode"}), 400
+    try:
+        _rediscover_fn()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.warning("scan error: %s", e)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 # ── health ping ───────────────────────────────────────────────────────────────
 
 @app.route("/ping")

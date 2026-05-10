@@ -293,6 +293,11 @@ export async function action({ request }: ActionFunctionArgs) {
         const data = await res.json()
         return { ok: true, ping: data }
       }
+      if (command === "scan") {
+        const res  = await fetch(`${API}/scan`, { method: "POST", signal: AbortSignal.timeout(15000) })
+        const data = await res.json()
+        return { ok: data.ok, error: data.error }
+      }
       if (command === "set_state")
         await post("/state", { state: form.get("state_name") as string })
       if (command === "estop") {
@@ -614,6 +619,7 @@ export default function Admin() {
   const cmdFetcher     = useFetcher()
   const statusFetcher  = useFetcher<typeof loader>()
   const pingFetcher    = useFetcher<typeof action>()
+  const scanFetcher    = useFetcher<typeof action>()
   const estopFetcher   = useFetcher<typeof action>()
 
   useEffect(() => {
@@ -622,7 +628,20 @@ export default function Admin() {
     return () => clearInterval(id)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const statusData = statusFetcher.data?.status ?? null
+  // Refresh status immediately after ping or scan completes
+  useEffect(() => {
+    if (pingFetcher.state === "idle" && pingFetcher.data != null)
+      statusFetcher.load("/admin")
+  }, [pingFetcher.state]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (scanFetcher.state === "idle" && scanFetcher.data != null)
+      statusFetcher.load("/admin")
+  }, [scanFetcher.state]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const statusData  = statusFetcher.data?.status ?? null
+  const isScanning  = scanFetcher.state !== "idle"
+  const isRefreshing = statusFetcher.state !== "idle"
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pingNodes  = (pingFetcher.data as any)?.ping?.nodes ?? null
 
@@ -716,8 +735,18 @@ export default function Admin() {
             >
               {pingFetcher.state !== "idle" ? "Pinging…" : "Ping All"}
             </button>
+            <button
+              onClick={() => scanFetcher.submit(
+                { device: "system", command: "scan", value: "0" },
+                { method: "POST", action: "/admin" },
+              )}
+              disabled={isScanning}
+              className="px-6 py-2 rounded-xl bg-neutral-700 text-white text-[20px] font-semibold active:bg-neutral-500 disabled:opacity-50"
+            >
+              {isScanning ? "Scanning…" : "Scan USB"}
+            </button>
             <div className="flex items-center gap-3">
-              <div className={`w-4 h-4 rounded-full ${statusData?.ok ? "bg-green-400" : "bg-red-400"}`} />
+              <div className={`w-4 h-4 rounded-full transition-colors ${statusData?.ok ? "bg-green-400" : "bg-red-400"} ${isRefreshing ? "animate-pulse" : ""}`} />
               <span className="text-[24px] text-neutral-500">{statusData?.ok ? "online" : "offline"}</span>
             </div>
           </div>
@@ -725,6 +754,14 @@ export default function Admin() {
 
         {/* Device status grid */}
         <DeviceStatusGrid status={statusData} />
+
+        {/* Scanning banner */}
+        {isScanning && (
+          <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-6 py-3">
+            <div className="w-3 h-3 rounded-full bg-amber-400 animate-pulse shrink-0" />
+            <span className="text-amber-800 text-[18px] font-semibold">Scanning USB ports — takes ~5 s</span>
+          </div>
+        )}
 
         {/* Ping results */}
         {pingNodes && (
