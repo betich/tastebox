@@ -78,13 +78,13 @@ const DEVICE_CONFIG: Record<Device, SubComponent[]> = {
       id: "pan", label: "Pan",
       actions: [
         { label: "Home", command: "home_pan"                },
-        { label: "+50",  command: "move_pan", value:   50   },
-        { label: "−50",  command: "move_pan", value:  -50   },
+        { label: "+400",  command: "move_pan", value:   400   },
+        { label: "−400",  command: "move_pan", value:  -400   },
       ],
       face: {
         a: { label: "Home", command: "home_pan"              },
-        x: { label: "+50",  command: "move_pan", value:  50  },
-        y: { label: "−50",  command: "move_pan", value: -50  },
+        x: { label: "+400",  command: "move_pan", value:  400  },
+        y: { label: "−400",  command: "move_pan", value: -400  },
       },
     },
   ],

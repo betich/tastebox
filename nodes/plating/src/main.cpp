@@ -15,7 +15,7 @@
 #define MOTOR_STEPS_REV 200
 #define GEAR_RATIO      1.0f
 #define STEPS_PER_DEG   (MOTOR_STEPS_REV * MICROSTEPPING * GEAR_RATIO / 360.0f)
-#define MAX_SPEED_DEG   30.0f
+#define MAX_SPEED_DEG   1.875f
 
 // Arm IBD_2
 #define PIN_ARM_L_IS   4
