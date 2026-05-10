@@ -76,6 +76,25 @@ Adafruit_PWMServoDriver pca(PCA_ADDR);
 RS485Node          node(0x45, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
 SerialFrameHandler serial_handler(0x45);
 
+void handlePlainText(const char* line, Stream& s) {
+  if (strcmp(line, "help") != 0) return;
+  s.println(F("Cutter node 0x45 — serial commands:"));
+  s.println(F("  @45 R 00      status  b0=door b1=pinner b2=roller b3=cutting"));
+  s.println(F("                        b4=L_disp b5=R_disp b6=pump_A b7=pump_B"));
+  s.println(F("  @45 W 11 01   door open    00=close"));
+  s.println(F("  @45 W 12 01   pinner clamp 00=release"));
+  s.println(F("  @45 W 13 01   roller ext   02=ret 03=stop"));
+  s.println(F("  @45 W 14 01   cutting ext  02=ret 03=stop"));
+  s.println(F("  @45 W 15 01   L dispenser on  00=off"));
+  s.println(F("  @45 W 16 01   R dispenser on  00=off"));
+  s.println(F("  @45 W 18 HH LL  dispenser duration ms (default 1000)"));
+  s.println(F("  @45 W 19 NN   pump A PWM (0-FF)"));
+  s.println(F("  @45 W 1A NN   pump B PWM (0-FF)"));
+  s.println(F("Pins: RS485(2nd) RO=D2 DI=D3 DE/RE=D4 | PCA9685 OE=D5 SDA=A4 SCL=A5"));
+  s.println(F("      PumpA=D6 PumpB=D11 | Roller IN1=D7 IN2=D8 | Cutting IN3=D9 IN4=D10"));
+  s.println(F("PCA ch: 0=pinner 4=door 8=L_disp 15=R_disp"));
+}
+
 // ── Helpers ────────────────────────────────────────────────
 void setServo(uint8_t ch, uint16_t ticks) { pca.setPWM(ch, 0, ticks); }
 
@@ -197,6 +216,7 @@ void setup() {
 
   serial_handler.setDefaultReadHandler(processRead);
   serial_handler.setDefaultWriteHandler(processWrite);
+  serial_handler.setPlainTextHandler(handlePlainText);
 
   Serial.println(F("[cutter] USB node 0x45 ready (RS485 secondary)"));
 }

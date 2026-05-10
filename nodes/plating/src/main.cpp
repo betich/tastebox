@@ -163,6 +163,27 @@ Stepper pan = { 13, 12, 11 };
 RS485Node          node(0x43, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
 SerialFrameHandler serial_handler(0x43);
 
+void handlePlainText(const char* line, Stream& s) {
+  if (strcmp(line, "help") != 0) return;
+  s.println(F("Plater node 0x43 — serial commands:"));
+  s.println(F("  @43 R 00/01   pan pos hi/lo (int16)"));
+  s.println(F("  @43 R 02      arm state  0=home 1=plate 2=moving"));
+  s.println(F("  @43 R 03      status     b0=pan_busy b1=arm_busy b2=lid_busy"));
+  s.println(F("  @43 R 04      lid state  0=closed 1=open 2=moving"));
+  s.println(F("  @43 W 10 01   pan stop"));
+  s.println(F("  @43 W 10 02   pan home"));
+  s.println(F("  @43 W 11 HH LL  pan target (int16 hi lo)"));
+  s.println(F("  @43 W 13 01   arm dispense  02=retract 03=fwd 04=bwd 05=stop"));
+  s.println(F("  @43 W 13 06   seq A->B (open lid then plate)"));
+  s.println(F("  @43 W 13 07   seq B->A (retract arm then close lid)"));
+  s.println(F("  @43 W 14 HH LL  arm duration ms"));
+  s.println(F("  @43 W 16 01   lid close  02=open 03=fwd 04=bwd 05=stop"));
+  s.println(F("  @43 W 17 HH LL  lid duration ms"));
+  s.println(F("Pins: Pan PUL=D13 DIR=D12 ENA=D11 | Arm L_IS=D4 R_IS=D5 L_PWM=D6 R_PWM=D7"));
+  s.println(F("      Lid L_IS=D8 R_IS=D9 L_PWM=D2 R_PWM=D3 | Limit=D10"));
+  s.println(F("      RS485(2nd) RO=A0 DI=A1 DE/RE=A2"));
+}
+
 int16_t pan_pos          = 0;
 int16_t pan_target       = 0;
 uint8_t status_reg       = 0;
@@ -438,6 +459,7 @@ void setup() {
 
   serial_handler.setDefaultReadHandler(processRead);
   serial_handler.setDefaultWriteHandler(processWrite);
+  serial_handler.setPlainTextHandler(handlePlainText);
 
   Serial.println("[plater] USB node 0x43 ready (RS485 secondary)");
 }

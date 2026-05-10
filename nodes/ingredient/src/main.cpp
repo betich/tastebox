@@ -96,6 +96,22 @@ uint16_t set_steps_rev = 1600;  // 1/8 microstepping — tweak until one vend = 
 RS485Node          node(0x44, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
 SerialFrameHandler serial_handler(0x44);
 
+void handlePlainText(const char* line, Stream& s) {
+  if (strcmp(line, "help") != 0) return;
+  s.println(F("Ingredient node 0x44 — serial commands:"));
+  s.println(F("  @44 R 00/01/02  status A/B/C  b0=busy b1=bwd"));
+  s.println(F("  @44 W 10 01   STOP_ALL"));
+  s.println(F("  @44 W 10 02   A_FWD_CONT   03=A_BWD_CONT"));
+  s.println(F("  @44 W 10 04   A_DISPENSE   05=A_RETRACT   0A=STOP_A"));
+  s.println(F("  @44 W 10 06   B_FWD_CONT   07=B_BWD_CONT"));
+  s.println(F("  @44 W 10 08   B_DISPENSE   09=B_RETRACT   0B=STOP_B"));
+  s.println(F("  @44 W 10 0C   C_FWD_CONT   0D=C_BWD_CONT"));
+  s.println(F("  @44 W 10 0E   C_DISPENSE   0F=C_RETRACT   10=STOP_C"));
+  s.println(F("  @44 W 11 HH LL  steps/rev (default 1600)"));
+  s.println(F("Pins: A PUL=D2 DIR=D3 ENA=D4 | B PUL=D13 DIR=D12 ENA=D11"));
+  s.println(F("      C PUL=D8 DIR=D9 ENA=D10 | RS485(2nd) RO=D5 DI=D6 DE/RE=D7"));
+}
+
 // ── Motor helpers ──────────────────────────────────────────
 void enableA()  { digitalWrite(A_ENA, LOW); }
 void disableA() { digitalWrite(A_ENA, HIGH); }
@@ -233,6 +249,7 @@ void setup() {
 
   serial_handler.setDefaultReadHandler(processRead);
   serial_handler.setDefaultWriteHandler(processWrite);
+  serial_handler.setPlainTextHandler(handlePlainText);
 
   Serial.println("[ingredient] USB node 0x44 ready (RS485 secondary)");
 }
