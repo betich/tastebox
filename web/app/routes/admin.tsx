@@ -77,14 +77,16 @@ const DEVICE_CONFIG: Record<Device, SubComponent[]> = {
     {
       id: "pan", label: "Pan",
       actions: [
-        { label: "Home", command: "home_pan"                },
-        { label: "+400",  command: "move_pan", value:   400   },
-        { label: "−400",  command: "move_pan", value:  -400   },
+        { label: "Home",   command: "home_pan"                 },
+        { label: "¼ fwd",  command: "move_pan", value:   128   },
+        { label: "¼ bwd",  command: "move_pan", value:  -128   },
+        { label: "½ fwd",  command: "move_pan", value:   256   },
+        { label: "½ bwd",  command: "move_pan", value:  -256   },
       ],
       face: {
-        a: { label: "Home", command: "home_pan"              },
-        x: { label: "+400",  command: "move_pan", value:  400  },
-        y: { label: "−400",  command: "move_pan", value: -400  },
+        a: { label: "Home",  command: "home_pan"               },
+        x: { label: "¼ fwd", command: "move_pan", value:  128  },
+        y: { label: "¼ bwd", command: "move_pan", value: -128  },
       },
     },
   ],
@@ -194,7 +196,7 @@ const DEVICE_CONFIG: Record<Device, SubComponent[]> = {
 // Joystick usage per device  (null = not used → dimmed)
 const STICK_USE: Record<Device, { l: string | null; r: string | null; lDesc: string; rDesc: string }> = {
   cooker:     { l: "Position (0–4)", r: null,           lDesc: "Release → set position", rDesc: "Not used" },
-  plating:    { l: "Pan Steps",      r: "Lid Dur ×50ms", lDesc: "Release → move pan",    rDesc: "Release → set lid duration" },
+  plating:    { l: "Pan (deg)",       r: "Lid Dur ×50ms", lDesc: "Release → move pan (full=±360°)", rDesc: "Release → set lid duration" },
   ingredient: { l: "Steps/rev",      r: null,           lDesc: "Release → set steps/rev", rDesc: "Not used" },
   cutter:     { l: null,             r: null,           lDesc: "Not used",               rDesc: "Not used" },
 }
@@ -641,7 +643,7 @@ export default function Admin() {
 
   const handleLCommit = useCallback((v: number) => {
     if (device === "cooker")     send("set_position", Math.round(v / 100 * 4))
-    if (device === "plating")    send("move_pan",     Math.round((v - 50) * 4))
+    if (device === "plating")    send("move_pan",     Math.round((v - 50) * 64))
     if (device === "ingredient") send("set_rev",      Math.round(v / 100 * 400))
   }, [device, send])
   const handleRCommit = useCallback((v: number) => {
