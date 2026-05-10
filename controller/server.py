@@ -22,6 +22,15 @@ _ingredient = None
 _cutter     = None
 _display: SSD1306Display | None = None
 
+# USB re-discovery callback — set by main_usb_auto() in master.py
+_rediscover_fn = None
+
+
+def set_rediscover_callback(fn):
+    global _rediscover_fn
+    _rediscover_fn = fn
+
+
 # RS-485 monitor — optional, populated by init_rs485_monitor()
 _rs485_available = False
 _rs485_node_status: dict[str, bool] = {
@@ -418,4 +427,8 @@ def ping():
             ok = dev.ping()
             elapsed_ms = round((time.monotonic() - t0) * 1000)
             results[name] = {"online": ok, "ms": elapsed_ms if ok else None}
+
+    if _rediscover_fn and any(not v["online"] for v in results.values()):
+        threading.Thread(target=_rediscover_fn, daemon=True, name="usb-rediscover").start()
+
     return jsonify({"ok": True, "nodes": results})

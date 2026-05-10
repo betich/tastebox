@@ -174,10 +174,13 @@ def main_usb_auto(run_demo_on_start: bool = False, rs485_monitor_port: str | Non
     display = SSD1306Display()
     port_map = discover()  # {addr: port_path}
 
+    live_buses: dict[int, NodeSerialBus] = {}  # addr → open bus (NullBus entries omitted)
+
     def _make_bus(addr: int):
         if addr in port_map:
             b = NodeSerialBus(port_map[addr], baud=BAUD)
             b.open()
+            live_buses[addr] = b
             return b
         return _NullBus()
 
@@ -191,6 +194,26 @@ def main_usb_auto(run_demo_on_start: bool = False, rs485_monitor_port: str | Non
     ingredient = _Ingredient(ingredient_bus)
     cutter     = _Cutter(cutter_bus)
 
+    devices_by_addr = {0x42: cooker, 0x43: plater, 0x44: ingredient, 0x45: cutter}
+
+    def rediscover():
+        offline = [a for a, d in devices_by_addr.items() if isinstance(d.bus, _NullBus)]
+        if not offline:
+            return
+        logger.info("rediscover: %d offline node(s), scanning USB ports", len(offline))
+        found = discover()
+        for addr, port in found.items():
+            if addr not in offline:
+                continue
+            try:
+                new_bus = NodeSerialBus(port, baud=BAUD)
+                new_bus.open()
+                devices_by_addr[addr].bus = new_bus
+                live_buses[addr] = new_bus
+                logger.info("rediscover: 0x%02X reconnected on %s", addr, port)
+            except Exception as e:
+                logger.warning("rediscover: failed to open %s for 0x%02X: %s", port, addr, e)
+
     devices = [cooker, plater, ingredient, cutter]
     results = probe_all(devices)
     online  = {d for d, ok in results.items() if ok}
@@ -199,6 +222,8 @@ def main_usb_auto(run_demo_on_start: bool = False, rs485_monitor_port: str | Non
     if offline:
         names = ", ".join(d.name for d in offline)
         logger.warning("offline devices will be skipped: %s", names)
+
+    server.set_rediscover_callback(rediscover)
 
     if rs485_monitor_port:
         server.init_rs485_monitor(rs485_monitor_port)
@@ -215,15 +240,13 @@ def main_usb_auto(run_demo_on_start: bool = False, rs485_monitor_port: str | Non
         logger.warning("no devices found — running headless (API still available)")
 
     logger.info("serving — Ctrl-C to quit")
-    opened_buses = [b for b in (cooker_bus, plater_bus, ingredient_bus, cutter_bus)
-                    if isinstance(b, NodeSerialBus)]
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         logger.info("shutting down")
     finally:
-        for b in opened_buses:
+        for b in live_buses.values():
             b.close()
 
 
