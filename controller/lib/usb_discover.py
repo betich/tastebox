@@ -5,7 +5,6 @@ probes each known node address using the ASCII register protocol,
 and returns {address: port_path} for every found node.
 """
 
-import concurrent.futures
 import glob
 import logging
 import time
@@ -28,17 +27,39 @@ PROBE_TIMEOUT = 0.5
 BOOT_WAIT = 2.5  # seconds to wait after port open for bootloader + sketch startup
 
 
-def _probe_port(path: str) -> tuple[int, serial.Serial] | None:
-    """Open one serial port and return (node_address, open_serial) if a node responds.
+def discover_open() -> dict[int, serial.Serial]:
+    """Scan all USB serial ports and return {node_address: open_serial}.
 
-    The serial is left open on success so callers can reuse it without a second
-    open() call (which would reset the Arduino again).  On failure the port is
-    closed internally and None is returned.
+    Opens all ports at once (all Arduinos reset simultaneously), waits a single
+    BOOT_WAIT, then probes each port sequentially.  The serial connections are
+    kept open and ready for immediate use — no second open() call, no second
+    Arduino reset.  Caller is responsible for closing the serials when done.
     """
-    try:
-        ser = serial.Serial(path, BAUD, timeout=PROBE_TIMEOUT)
-        time.sleep(BOOT_WAIT)  # wait for bootloader to hand off to sketch
+    ports = sorted(glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*"))
+    if not ports:
+        logger.warning("usb-discover: no serial ports found")
+        return {}
+
+    logger.info("usb-discover: scanning %d port(s): %s", len(ports), ", ".join(ports))
+
+    # Open all ports quickly so all Arduinos reset at the same time.
+    open_ports: list[tuple[str, serial.Serial]] = []
+    for path in ports:
+        try:
+            ser = serial.Serial(path, BAUD, timeout=PROBE_TIMEOUT)
+            open_ports.append((path, ser))
+        except serial.SerialException as e:
+            logger.warning("usb-discover: cannot open %s: %s", path, e)
+
+    if not open_ports:
+        return {}
+
+    time.sleep(BOOT_WAIT)  # one wait covers all ports
+
+    found: dict[int, serial.Serial] = {}
+    for path, ser in open_ports:
         ser.reset_input_buffer()
+        matched = False
         for addr in NODE_ADDRESSES:
             ser.reset_input_buffer()
             ser.write(encode_read(addr, 0x00))
@@ -47,76 +68,30 @@ def _probe_port(path: str) -> tuple[int, serial.Serial] | None:
                 continue
             parts = raw.split()
             if len(parts) >= 2 and parts[1] not in ("R", "W"):
-                return addr, ser
-        ser.close()
-    except serial.SerialException:
-        pass
-    return None
+                name = NODE_ADDRESSES[addr]
+                logger.info("usb-discover: 0x%02X (%s) → %s", addr, name, path)
+                found[addr] = ser
+                matched = True
+                break
+        if not matched:
+            logger.debug("usb-discover: no node identified on %s", path)
+            ser.close()
+
+    missing = [NODE_ADDRESSES[a] for a in NODE_ADDRESSES if a not in found]
+    if missing:
+        logger.warning("usb-discover: nodes not found: %s", ", ".join(missing))
+    return found
 
 
 def discover() -> dict[int, str]:
     """Scan all USB serial ports and return {node_address: port_path}.
 
-    Ports are probed in parallel to keep total scan time short.
-    Nodes not found are logged as warnings.
+    Thin wrapper around discover_open() that closes the serials after mapping
+    addresses to port paths.
     """
-    ports = sorted(glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*"))
-    if not ports:
-        logger.warning("usb-discover: no serial ports found")
-        return {}
-
-    logger.info("usb-discover: scanning %d port(s): %s", len(ports), ", ".join(ports))
-    found: dict[int, str] = {}
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(ports)) as pool:
-        future_to_port = {pool.submit(_probe_port, p): p for p in ports}
-        for future in concurrent.futures.as_completed(future_to_port):
-            path = future_to_port[future]
-            result = future.result()
-            if result is not None:
-                addr, ser = result
-                ser.close()  # discover() only needs the path
-                name = NODE_ADDRESSES[addr]
-                logger.info("usb-discover: 0x%02X (%s) → %s", addr, name, path)
-                found[addr] = path
-            else:
-                logger.debug("usb-discover: no node on %s", path)
-
-    missing = [NODE_ADDRESSES[a] for a in NODE_ADDRESSES if a not in found]
-    if missing:
-        logger.warning("usb-discover: nodes not found: %s", ", ".join(missing))
-    return found
-
-
-def discover_open() -> dict[int, serial.Serial]:
-    """Scan all USB serial ports and return {node_address: open_serial}.
-
-    Unlike discover(), the serial connections are kept open and ready for
-    immediate use — no second open() call, no second Arduino reset.
-    Caller is responsible for closing the serials when done.
-    """
-    ports = sorted(glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*"))
-    if not ports:
-        logger.warning("usb-discover: no serial ports found")
-        return {}
-
-    logger.info("usb-discover: scanning %d port(s): %s", len(ports), ", ".join(ports))
-    found: dict[int, serial.Serial] = {}
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(ports)) as pool:
-        future_to_port = {pool.submit(_probe_port, p): p for p in ports}
-        for future in concurrent.futures.as_completed(future_to_port):
-            path = future_to_port[future]
-            result = future.result()
-            if result is not None:
-                addr, ser = result
-                name = NODE_ADDRESSES[addr]
-                logger.info("usb-discover: 0x%02X (%s) → %s", addr, name, path)
-                found[addr] = ser
-            else:
-                logger.debug("usb-discover: no node on %s", path)
-
-    missing = [NODE_ADDRESSES[a] for a in NODE_ADDRESSES if a not in found]
-    if missing:
-        logger.warning("usb-discover: nodes not found: %s", ", ".join(missing))
-    return found
+    result = discover_open()
+    paths: dict[int, str] = {}
+    for addr, ser in result.items():
+        paths[addr] = ser.port
+        ser.close()
+    return paths
