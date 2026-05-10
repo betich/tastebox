@@ -16,7 +16,7 @@ interface StatusData {
   rs485?:      { available: boolean; cooker: boolean; plating: boolean; ingredient: boolean; cutter: boolean }
 }
 
-type SubAction    = { label: string; command: string; value?: number }
+type SubAction    = { label: string; command: string; value?: number; stopCommand?: string }
 type FaceMap      = Partial<Record<"a" | "b" | "x" | "y", SubAction>>
 type SubComponent = { id: string; label: string; actions: SubAction[]; face: FaceMap }
 
@@ -159,35 +159,35 @@ const DEVICE_CONFIG: Record<Device, SubComponent[]> = {
       },
     },
     {
-      id: "motor", label: "Roller / Scissor",
+      id: "motor", label: "Roller / Cutter",
       actions: [
-        { label: "Roller Fwd",   command: "roller_fwd"   },
-        { label: "Roller Rev",   command: "roller_rev"   },
-        { label: "Roller Stop",  command: "roller_stop"  },
-        { label: "Scissor Fwd",  command: "scissor_fwd"  },
-        { label: "Scissor Rev",  command: "scissor_rev"  },
-        { label: "Scissor Stop", command: "scissor_stop" },
+        { label: "Roller Up",    command: "roller_up",    stopCommand: "roller_stop"  },
+        { label: "Roller Down",  command: "roller_down",  stopCommand: "roller_stop"  },
+        { label: "Cutter Close", command: "cutter_close", stopCommand: "cutter_stop"  },
+        { label: "Cutter Open",  command: "cutter_open",  stopCommand: "cutter_stop"  },
       ],
       face: {
-        a: { label: "Roller Fwd",  command: "roller_fwd"  },
-        b: { label: "Roller Rev",  command: "roller_rev"  },
-        x: { label: "Scissor Fwd", command: "scissor_fwd" },
-        y: { label: "Scissor Rev", command: "scissor_rev" },
+        a: { label: "Roller Up",    command: "roller_up",    stopCommand: "roller_stop"  },
+        b: { label: "Roller Down",  command: "roller_down",  stopCommand: "roller_stop"  },
+        x: { label: "Cutter Close", command: "cutter_close", stopCommand: "cutter_stop"  },
+        y: { label: "Cutter Open",  command: "cutter_open",  stopCommand: "cutter_stop"  },
       },
     },
     {
       id: "dispenser", label: "Dispensers",
       actions: [
-        { label: "Pepper",   command: "pepper_dispense" },
-        { label: "Pump On",  command: "pump_on"         },
-        { label: "Pump Off", command: "pump_off"        },
-        { label: "Salt",     command: "salt_dispense"   },
+        { label: "Pepper",     command: "pepper_dispense" },
+        { label: "Salt",       command: "salt_dispense"   },
+        { label: "Oil On",     command: "oil_on"          },
+        { label: "Oil Off",    command: "oil_off"         },
+        { label: "Water On",   command: "water_on"        },
+        { label: "Water Off",  command: "water_off"       },
       ],
       face: {
-        a: { label: "Pepper",   command: "pepper_dispense" },
-        b: { label: "Pump On",  command: "pump_on"         },
-        x: { label: "Pump Off", command: "pump_off"        },
-        y: { label: "Salt",     command: "salt_dispense"   },
+        a: { label: "Oil On",    command: "oil_on"    },
+        b: { label: "Oil Off",   command: "oil_off"   },
+        x: { label: "Water On",  command: "water_on"  },
+        y: { label: "Water Off", command: "water_off" },
       },
     },
   ],
@@ -273,15 +273,17 @@ export async function action({ request }: ActionFunctionArgs) {
       if (command === "door_close")      await post("/cutter/door",    { action: "close"    })
       if (command === "clamp")           await post("/cutter/clamp",   { action: "clamp"    })
       if (command === "release")         await post("/cutter/clamp",   { action: "release"  })
-      if (command === "roller_fwd")      await post("/cutter/roller",  { action: "fwd"      })
-      if (command === "roller_rev")      await post("/cutter/roller",  { action: "rev"      })
+      if (command === "roller_up")       await post("/cutter/roller",  { action: "up"       })
+      if (command === "roller_down")     await post("/cutter/roller",  { action: "down"     })
       if (command === "roller_stop")     await post("/cutter/roller",  { action: "stop"     })
-      if (command === "scissor_fwd")     await post("/cutter/scissor", { action: "fwd"      })
-      if (command === "scissor_rev")     await post("/cutter/scissor", { action: "rev"      })
-      if (command === "scissor_stop")    await post("/cutter/scissor", { action: "stop"     })
+      if (command === "cutter_close")    await post("/cutter/cut",     { action: "close"    })
+      if (command === "cutter_open")     await post("/cutter/cut",     { action: "open"     })
+      if (command === "cutter_stop")     await post("/cutter/cut",     { action: "stop"     })
       if (command === "pepper_dispense") await post("/cutter/pepper",  { action: "dispense" })
-      if (command === "pump_on")         await post("/cutter/pump",    { action: "on"       })
-      if (command === "pump_off")        await post("/cutter/pump",    { action: "off"      })
+      if (command === "oil_on")          await post("/cutter/pump_a",  { action: "on"       })
+      if (command === "oil_off")         await post("/cutter/pump_a",  { action: "off"      })
+      if (command === "water_on")        await post("/cutter/pump_b",  { action: "on"       })
+      if (command === "water_off")       await post("/cutter/pump_b",  { action: "off"      })
       if (command === "salt_dispense")   await post("/cutter/salt",    { action: "dispense" })
     } else if (device === "system") {
       if (command === "ping") {
@@ -298,8 +300,9 @@ export async function action({ request }: ActionFunctionArgs) {
           post("/plating/lid",  { action: "stop" }),
           post("/ingredient/stop"),
           post("/cutter/roller",  { action: "stop" }),
-          post("/cutter/scissor", { action: "stop" }),
-          post("/cutter/pump",    { action: "off"  }),
+          post("/cutter/cut",     { action: "stop" }),
+          post("/cutter/pump_a",  { action: "off"  }),
+          post("/cutter/pump_b",  { action: "off"  }),
         ])
       }
     }
@@ -421,7 +424,7 @@ function StatusRow({ status, device }: { status: StatusData | null; device: Devi
         <span>door {st(d.door_busy)}</span>
         <span>clamp {st(d.clamp_busy)}</span>
         <span>roller {st(d.roller_busy)}</span>
-        <span>scissor {st(d.scissor_busy)}</span>
+        <span>cutter {st(d.scissor_busy)}</span>
       </div>
     )
   }
@@ -509,8 +512,15 @@ function ActionRows({
                 return (
                   <button
                     key={`${a.command}-${a.value ?? ""}`}
-                    onClick={() => onAction(a.command, a.value)}
-                    className="relative px-5 py-2.5 rounded-xl bg-neutral-200 text-neutral-800 text-[18px] font-semibold active:bg-neutral-400"
+                    {...(a.stopCommand
+                      ? {
+                          onPointerDown: (e) => { e.currentTarget.setPointerCapture(e.pointerId); onAction(a.command, a.value) },
+                          onPointerUp:   () => onAction(a.stopCommand!, a.value),
+                          onPointerLeave: () => onAction(a.stopCommand!, a.value),
+                        }
+                      : { onClick: () => onAction(a.command, a.value) }
+                    )}
+                    className="relative px-5 py-2.5 rounded-xl bg-neutral-200 text-neutral-800 text-[18px] font-semibold active:bg-neutral-400 select-none touch-none"
                   >
                     {a.label}
                     {fk && (

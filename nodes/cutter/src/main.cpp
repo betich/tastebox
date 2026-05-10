@@ -47,13 +47,17 @@
 #define REG_STATUS       0x00
 #define REG_DOOR_CMD     0x11
 #define REG_PINNER_CMD   0x12
-#define REG_ROLLER_CMD   0x13  // roller piston:  0x01=ext 0x02=ret 0x03=stop
-#define REG_CUTTING_CMD  0x14  // cutting piston: 0x01=ext 0x02=ret 0x03=stop
+#define REG_CUTTER_CMD   0x13  // cutter:  0x01=close 0x02=open 0x03=stop
+#define REG_ROLLER_CMD   0x14  // roller:  0x01=up    0x02=down  0x03=stop
 #define REG_L_DISP_CMD   0x15
 #define REG_R_DISP_CMD   0x16
 #define REG_DUR_HI       0x18
 #define REG_PUMP_A       0x19  // raw PWM 0-255
 #define REG_PUMP_B       0x1A  // raw PWM 0-255
+#define REG_PINNER_ANG   0x20  // pinner servo angle 0-180
+#define REG_DOOR_ANG     0x21  // door servo angle 0-180
+#define REG_L_DISP_ANG   0x22  // L dispenser servo angle 0-180
+#define REG_R_DISP_ANG   0x23  // R dispenser servo angle 0-180
 
 // STATUS bits
 #define BIT_DOOR    0x01
@@ -83,13 +87,17 @@ void handlePlainText(const char* line, Stream& s) {
   s.println(F("                        b4=L_disp b5=R_disp b6=pump_A b7=pump_B"));
   s.println(F("  @45 W 11 01   door open    00=close"));
   s.println(F("  @45 W 12 01   pinner clamp 00=release"));
-  s.println(F("  @45 W 13 01   roller ext   02=ret 03=stop"));
-  s.println(F("  @45 W 14 01   cutting ext  02=ret 03=stop"));
+  s.println(F("  @45 W 13 01   cutter close 02=open 03=stop"));
+  s.println(F("  @45 W 14 01   roller up    02=down 03=stop"));
   s.println(F("  @45 W 15 01   L dispenser on  00=off"));
   s.println(F("  @45 W 16 01   R dispenser on  00=off"));
   s.println(F("  @45 W 18 HH LL  dispenser duration ms (default 1000)"));
   s.println(F("  @45 W 19 NN   pump A PWM (0-FF)"));
   s.println(F("  @45 W 1A NN   pump B PWM (0-FF)"));
+  s.println(F("  @45 W 20 NN   pinner angle 0-B4 (0-180 deg)"));
+  s.println(F("  @45 W 21 NN   door angle   0-B4 (0-180 deg)"));
+  s.println(F("  @45 W 22 NN   L disp angle 0-B4 (0-180 deg)"));
+  s.println(F("  @45 W 23 NN   R disp angle 0-B4 (0-180 deg)"));
   s.println(F("Pins: RS485(2nd) RO=D2 DI=D3 DE/RE=D4 | PCA9685 OE=D5 SDA=A4 SCL=A5"));
   s.println(F("      PumpA=D6 PumpB=D11 | Roller IN1=D7 IN2=D8 | Cutting IN3=D9 IN4=D10"));
   s.println(F("PCA ch: 0=pinner 4=door 8=L_disp 15=R_disp"));
@@ -97,6 +105,10 @@ void handlePlainText(const char* line, Stream& s) {
 
 // ── Helpers ────────────────────────────────────────────────
 void setServo(uint8_t ch, uint16_t ticks) { pca.setPWM(ch, 0, ticks); }
+void setServoAngle(uint8_t ch, uint8_t deg) {
+  uint16_t ticks = map(constrain(deg, 0, 180), 0, 180, SERVO_0, SERVO_180);
+  pca.setPWM(ch, 0, ticks);
+}
 
 void setPumpA(uint8_t val) {
   analogWrite(PIN_PUMP_A, val);
@@ -130,16 +142,16 @@ void processWrite(uint8_t reg, uint8_t* data, uint8_t len) {
       else                  { setServo(PCA_CH_PINNER, SERVO_0);  status_reg &= ~BIT_PINNER; Serial.println(F("[pin] release")); }
       break;
 
-    case REG_ROLLER_CMD:
-      if      (data[0] == 0x01) { digitalWrite(PIN_PIST_R_IN1, HIGH); digitalWrite(PIN_PIST_R_IN2, LOW);  status_reg |=  BIT_ROLLER; Serial.println(F("[roller] ext"));  }
-      else if (data[0] == 0x02) { digitalWrite(PIN_PIST_R_IN1, LOW);  digitalWrite(PIN_PIST_R_IN2, HIGH); status_reg |=  BIT_ROLLER; Serial.println(F("[roller] ret"));  }
-      else                      { digitalWrite(PIN_PIST_R_IN1, LOW);  digitalWrite(PIN_PIST_R_IN2, LOW);  status_reg &= ~BIT_ROLLER; Serial.println(F("[roller] stop")); }
+    case REG_CUTTER_CMD:
+      if      (data[0] == 0x01) { digitalWrite(PIN_PIST_R_IN1, HIGH); digitalWrite(PIN_PIST_R_IN2, LOW);  status_reg |=  BIT_ROLLER;  Serial.println(F("[cutter] close")); }
+      else if (data[0] == 0x02) { digitalWrite(PIN_PIST_R_IN1, LOW);  digitalWrite(PIN_PIST_R_IN2, HIGH); status_reg |=  BIT_ROLLER;  Serial.println(F("[cutter] open"));  }
+      else                      { digitalWrite(PIN_PIST_R_IN1, LOW);  digitalWrite(PIN_PIST_R_IN2, LOW);  status_reg &= ~BIT_ROLLER;  Serial.println(F("[cutter] stop")); }
       break;
 
-    case REG_CUTTING_CMD:
-      if      (data[0] == 0x01) { digitalWrite(PIN_PIST_C_IN3, HIGH); digitalWrite(PIN_PIST_C_IN4, LOW);  status_reg |=  BIT_CUTTING; Serial.println(F("[cut] ext"));  }
-      else if (data[0] == 0x02) { digitalWrite(PIN_PIST_C_IN3, LOW);  digitalWrite(PIN_PIST_C_IN4, HIGH); status_reg |=  BIT_CUTTING; Serial.println(F("[cut] ret"));  }
-      else                      { digitalWrite(PIN_PIST_C_IN3, LOW);  digitalWrite(PIN_PIST_C_IN4, LOW);  status_reg &= ~BIT_CUTTING; Serial.println(F("[cut] stop")); }
+    case REG_ROLLER_CMD:
+      if      (data[0] == 0x01) { digitalWrite(PIN_PIST_C_IN3, HIGH); digitalWrite(PIN_PIST_C_IN4, LOW);  status_reg |=  BIT_CUTTING; Serial.println(F("[roller] up"));   }
+      else if (data[0] == 0x02) { digitalWrite(PIN_PIST_C_IN3, LOW);  digitalWrite(PIN_PIST_C_IN4, HIGH); status_reg |=  BIT_CUTTING; Serial.println(F("[roller] down")); }
+      else                      { digitalWrite(PIN_PIST_C_IN3, LOW);  digitalWrite(PIN_PIST_C_IN4, LOW);  status_reg &= ~BIT_CUTTING; Serial.println(F("[roller] stop")); }
       break;
 
     case REG_L_DISP_CMD:
@@ -164,6 +176,26 @@ void processWrite(uint8_t reg, uint8_t* data, uint8_t len) {
     case REG_PUMP_B:
       setPumpB(data[0]);
       Serial.print(F("[pumpB] ")); Serial.println(data[0]);
+      break;
+
+    case REG_PINNER_ANG:
+      setServoAngle(PCA_CH_PINNER, data[0]);
+      Serial.print(F("[pinner] ")); Serial.print(data[0]); Serial.println(F(" deg"));
+      break;
+
+    case REG_DOOR_ANG:
+      setServoAngle(PCA_CH_DOOR, data[0]);
+      Serial.print(F("[door] ")); Serial.print(data[0]); Serial.println(F(" deg"));
+      break;
+
+    case REG_L_DISP_ANG:
+      setServoAngle(PCA_CH_L_DISP, data[0]);
+      Serial.print(F("[L-disp] ")); Serial.print(data[0]); Serial.println(F(" deg"));
+      break;
+
+    case REG_R_DISP_ANG:
+      setServoAngle(PCA_CH_R_DISP, data[0]);
+      Serial.print(F("[R-disp] ")); Serial.print(data[0]); Serial.println(F(" deg"));
       break;
   }
 }
@@ -218,10 +250,18 @@ void setup() {
   serial_handler.setDefaultWriteHandler(processWrite);
   serial_handler.setPlainTextHandler(handlePlainText);
 
+  pinMode(LED_BUILTIN, OUTPUT);
+
   Serial.println(F("[cutter] USB node 0x45 ready (RS485 secondary)"));
 }
 
+static uint32_t led_last = 0;
+static bool     led_state = false;
+
 void loop() {
+  uint32_t now = millis();
+  if (now - led_last >= 500) { led_last = now; led_state = !led_state; digitalWrite(LED_BUILTIN, led_state); }
+
   serial_handler.poll(Serial);
   node.poll();
   updateTimers();

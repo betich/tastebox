@@ -353,20 +353,20 @@ def cutter_roller():
     action = (request.get_json() or {}).get("action", "stop")
     def _do():
         with _lock:
-            if   action == "fwd": _cutter.roller_fwd()
-            elif action == "rev": _cutter.roller_rev()
-            else:                 _cutter.roller_stop()
+            if   action == "up":   _cutter.roller_up()
+            elif action == "down": _cutter.roller_down()
+            else:                  _cutter.roller_stop()
     return _safe(_do)
 
 
-@app.route("/cutter/scissor", methods=["POST"])
-def cutter_scissor():
+@app.route("/cutter/cut", methods=["POST"])
+def cutter_cut():
     action = (request.get_json() or {}).get("action", "stop")
     def _do():
         with _lock:
-            if   action == "fwd": _cutter.scissor_fwd()
-            elif action == "rev": _cutter.scissor_rev()
-            else:                 _cutter.scissor_stop()
+            if   action == "close": _cutter.cutter_close()
+            elif action == "open":  _cutter.cutter_open()
+            else:                   _cutter.cutter_stop()
     return _safe(_do)
 
 

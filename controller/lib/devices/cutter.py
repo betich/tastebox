@@ -4,8 +4,8 @@ from .base import BaseDevice
 REG_STATUS      = 0x00
 REG_DOOR_CMD    = 0x11
 REG_PINNER_CMD  = 0x12
-REG_ROLLER_CMD  = 0x13  # roller piston:  0x01=ext 0x02=ret 0x03=stop
-REG_CUTTING_CMD = 0x14  # cutting piston: 0x01=ext 0x02=ret 0x03=stop
+REG_CUTTER_CMD  = 0x13  # cutter: 0x01=close 0x02=open 0x03=stop
+REG_ROLLER_CMD  = 0x14  # roller: 0x01=up   0x02=down  0x03=stop
 REG_L_DISP_CMD  = 0x15
 REG_R_DISP_CMD  = 0x16
 REG_DUR_HI      = 0x18
@@ -54,15 +54,15 @@ class CutterDevice(BaseDevice):
     def clamp(self):        self.bus.write_bytes(self.address, REG_PINNER_CMD,  0x01)
     def release(self):      self.bus.write_bytes(self.address, REG_PINNER_CMD,  0x02)
 
-    # Roller piston
-    def roller_fwd(self):   self.bus.write_bytes(self.address, REG_ROLLER_CMD,  0x01)
-    def roller_rev(self):   self.bus.write_bytes(self.address, REG_ROLLER_CMD,  0x02)
-    def roller_stop(self):  self.bus.write_bytes(self.address, REG_ROLLER_CMD,  0x03)
+    # Cutter (register 0x13)
+    def cutter_close(self): self.bus.write_bytes(self.address, REG_CUTTER_CMD, 0x01)
+    def cutter_open(self):  self.bus.write_bytes(self.address, REG_CUTTER_CMD, 0x02)
+    def cutter_stop(self):  self.bus.write_bytes(self.address, REG_CUTTER_CMD, 0x03)
 
-    # Cutting piston (server.py calls these as "scissor")
-    def scissor_fwd(self):  self.bus.write_bytes(self.address, REG_CUTTING_CMD, 0x01)
-    def scissor_rev(self):  self.bus.write_bytes(self.address, REG_CUTTING_CMD, 0x02)
-    def scissor_stop(self): self.bus.write_bytes(self.address, REG_CUTTING_CMD, 0x03)
+    # Roller piston (register 0x14)
+    def roller_up(self):    self.bus.write_bytes(self.address, REG_ROLLER_CMD,  0x01)
+    def roller_down(self):  self.bus.write_bytes(self.address, REG_ROLLER_CMD,  0x02)
+    def roller_stop(self):  self.bus.write_bytes(self.address, REG_ROLLER_CMD,  0x03)
 
     # L/R dispensers (salt & pepper servos)
     def pepper_dispense(self): self.bus.write_bytes(self.address, REG_L_DISP_CMD, 0x01)
