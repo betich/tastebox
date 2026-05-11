@@ -326,6 +326,12 @@ def ingredient_revolutions():
     return _safe(lambda: _ingredient.set_steps_per_rev(steps) or {})
 
 
+@app.route("/ingredient/speed", methods=["POST"])
+def ingredient_speed():
+    half_us = int((request.get_json() or {}).get("half_us", 800))
+    return _safe(lambda: _ingredient.set_speed(half_us) or {})
+
+
 # ── cutter (0x45) ─────────────────────────────────────────────────────────────
 
 @app.route("/cutter/door", methods=["POST"])

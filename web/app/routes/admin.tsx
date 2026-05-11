@@ -198,7 +198,7 @@ const DEVICE_CONFIG: Record<Device, SubComponent[]> = {
 const STICK_USE: Record<Device, { l: string | null; r: string | null; lDesc: string; rDesc: string }> = {
   cooker:     { l: "Position (0–4)", r: null,           lDesc: "Release → set position", rDesc: "Not used" },
   plating:    { l: "Pan (deg)",       r: "Lid Dur ×50ms", lDesc: "Release → move pan (full=±360°)", rDesc: "Release → set lid duration" },
-  ingredient: { l: "Steps/rev",      r: null,           lDesc: "Release → set steps/rev", rDesc: "Not used" },
+  ingredient: { l: "Steps/rev",      r: "Speed",        lDesc: "Release → set steps/rev", rDesc: "Release → set step speed (up=fast, default=50)" },
   cutter:     { l: null,             r: null,           lDesc: "Not used",               rDesc: "Not used" },
 }
 
@@ -269,6 +269,7 @@ export async function action({ request }: ActionFunctionArgs) {
       if (command === "c_stop")     await post("/ingredient/c/stop")
       if (command === "stop")       await post("/ingredient/stop")
       if (command === "set_rev")    await post("/ingredient/revolutions", { steps: Math.round(value) })
+      if (command === "set_speed")  await post("/ingredient/speed",       { half_us: Math.round(value) })
     } else if (device === "cutter") {
       if (command === "door_open")       await post("/cutter/door",    { action: "open"     })
       if (command === "door_close")      await post("/cutter/door",    { action: "close"    })
@@ -678,7 +679,9 @@ export default function Admin() {
     if (device === "ingredient") send("set_rev",      Math.round(v / 100 * 400))
   }, [device, send])
   const handleRCommit = useCallback((v: number) => {
-    if (device === "plating") send("lid_dur", v * 50)
+    if (device === "plating")    send("lid_dur",   v * 50)
+    // up (v=100) → fast (200µs), center (v=50) → default (800µs), down (v=0) → slow (1400µs)
+    if (device === "ingredient") send("set_speed", Math.round(200 + (1 - v / 100) * 1200))
   }, [device, send])
 
   const gpConnected = useGamepadInput(

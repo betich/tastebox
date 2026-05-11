@@ -46,7 +46,7 @@
 #define C_DIR  9
 #define C_ENA  10
 
-#define STEP_HALF_US  800   // µs per half-pulse (~625 Hz)
+#define STEP_HALF_US_DEFAULT  800   // µs per half-pulse (~625 Hz)
 
 // ── RS485 ───────────────────────────────────────────────────
 #define PIN_RS485_RX    5
@@ -59,6 +59,8 @@
 #define REG_CMD       0x10
 #define REG_REV_HI    0x11
 #define REG_REV_LO    0x12
+#define REG_SPD_HI    0x13   // step half-delay hi byte (µs, uint16)
+#define REG_SPD_LO    0x14   // step half-delay lo byte
 
 #define CMD_STOP_ALL    0x01
 #define CMD_A_FWD_CONT  0x02
@@ -92,6 +94,7 @@ Motor motorC = { IDLE, 0, 0 };
 
 uint8_t  pending_cmd   = 0;
 uint16_t set_steps_rev = 1600;  // 1/8 microstepping — tweak until one vend = one revolution
+uint16_t step_half_us  = STEP_HALF_US_DEFAULT;
 
 RS485Node          node(0x44, PIN_RS485_RX, PIN_RS485_TX, PIN_RS485_DE_RE);
 SerialFrameHandler serial_handler(0x44);
@@ -157,6 +160,9 @@ void processWrite(uint8_t reg, uint8_t* data, uint8_t len) {
     pending_cmd = data[0];
   } else if (reg == REG_REV_HI && len >= 2) {
     set_steps_rev = (uint16_t)((data[0] << 8) | data[1]);
+  } else if (reg == REG_SPD_HI && len >= 2) {
+    uint16_t v = (uint16_t)((data[0] << 8) | data[1]);
+    if (v >= 50) step_half_us = v;  // clamp: minimum 50µs
   }
 }
 
@@ -274,11 +280,11 @@ void loop() {
     if (a) digitalWrite(A_PUL, HIGH);
     if (b) digitalWrite(B_PUL, HIGH);
     if (c) digitalWrite(C_PUL, HIGH);
-    delayMicroseconds(STEP_HALF_US);
+    delayMicroseconds(step_half_us);
     if (a) digitalWrite(A_PUL, LOW);
     if (b) digitalWrite(B_PUL, LOW);
     if (c) digitalWrite(C_PUL, LOW);
-    delayMicroseconds(STEP_HALF_US);
+    delayMicroseconds(step_half_us);
 
     if (a && motorA.mode == REVOLUTION) {
       if (motorA.steps_left > 0) motorA.steps_left--;

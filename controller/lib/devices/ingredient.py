@@ -6,6 +6,8 @@ REG_STATUS_C = 0x02
 REG_CMD      = 0x10
 REG_REV_HI   = 0x11
 REG_REV_LO   = 0x12
+REG_SPD_HI   = 0x13
+REG_SPD_LO   = 0x14
 
 CMD_STOP_ALL   = 0x01
 CMD_A_FWD_CONT = 0x02
@@ -49,6 +51,11 @@ class IngredientDevice(BaseDevice):
     def set_steps_per_rev(self, steps: int):
         val = max(1, min(65535, int(steps)))
         self.bus.write_bytes(self.address, REG_REV_HI, val >> 8, val & 0xFF)
+
+    def set_speed(self, half_us: int):
+        """Set step half-delay in µs (lower = faster). Min 50, default 800."""
+        val = max(50, min(65535, int(half_us)))
+        self.bus.write_bytes(self.address, REG_SPD_HI, val >> 8, val & 0xFF)
 
     def a_fwd(self):    self.bus.write_bytes(self.address, REG_CMD, CMD_A_FWD_CONT)
     def a_bwd(self):    self.bus.write_bytes(self.address, REG_CMD, CMD_A_BWD_CONT)
