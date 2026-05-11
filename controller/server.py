@@ -25,6 +25,17 @@ _display: SSD1306Display | None = None
 # USB re-discovery callback — set by main_usb_auto() in master.py
 _rediscover_fn = None
 
+# ── cook state ────────────────────────────────────────────────────────────────
+_cook_lock  = threading.Lock()
+_cook_abort = threading.Event()
+_cook_state: dict = {
+    "running": False, "step": 0, "step_label": "",
+    "done": False, "error": None, "cook_end_ms": 0,
+}
+COOK_DURATION_S = 240
+PLATE_ARM_MS    = 5000
+PLATE_PAN_STEPS = 500
+
 
 def set_rediscover_callback(fn):
     global _rediscover_fn
@@ -429,6 +440,171 @@ def scan():
     except Exception as e:
         logger.warning("scan error: %s", e)
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ── cook sequence ────────────────────────────────────────────────────────────
+
+def _cook_wait(busy_fn, timeout_s: float = 30.0, poll_s: float = 0.25):
+    """Poll until busy_fn() is falsy, raising on abort or timeout."""
+    deadline = time.monotonic() + timeout_s
+    while True:
+        if _cook_abort.is_set():
+            raise RuntimeError("E-STOP")
+        try:
+            if not busy_fn():
+                return
+        except Exception:
+            pass
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"device busy after {timeout_s}s")
+        time.sleep(poll_s)
+
+
+def _run_cook_sequence(umami_pos: int, menu_index: int):
+    global _cook_state
+    try:
+        # 1 — dispense ingredients A, B, C simultaneously
+        _cook_state.update(step=1, step_label="Dispensing ingredients")
+        with _lock:
+            _ingredient.dispense()
+            _ingredient.b_dispense()
+            _ingredient.c_dispense()
+        _cook_wait(
+            lambda: _ingredient.is_busy_a() or _ingredient.is_busy_b() or _ingredient.is_busy_c(),
+            timeout_s=30,
+        )
+
+        # 2 — cutter: pin → cut → roll → open door
+        _cook_state.update(step=2, step_label="Cutting & prepping")
+        with _lock:
+            _cutter.pinner_pin()
+        time.sleep(0.5)
+        with _lock:
+            _cutter.cutter_close()
+        _cook_wait(lambda: _cutter.get_status_flags()["scissor_busy"], timeout_s=15)
+        with _lock:
+            _cutter.roller_down()
+        _cook_wait(lambda: _cutter.get_status_flags()["roller_busy"], timeout_s=15)
+        with _lock:
+            _cutter.open_door()
+
+        # 3 — close plating lid
+        _cook_state.update(step=3, step_label="Closing lid")
+        with _lock:
+            _plater.close_lid()
+        _cook_wait(lambda: _plater.is_lid_busy(), timeout_s=20)
+
+        # 4 — cooker on: set position + click
+        _cook_state.update(step=4, step_label="Starting cooker")
+        with _lock:
+            _cooker.set_position(umami_pos + 1)
+            _cooker.click()
+
+        # 5 — cook 4 min
+        _cook_state.update(step=5, step_label="Cooking")
+        cook_end_ms = int(time.time() * 1000) + COOK_DURATION_S * 1000
+        _cook_state["cook_end_ms"] = cook_end_ms
+        deadline = time.monotonic() + COOK_DURATION_S
+        while time.monotonic() < deadline:
+            if _cook_abort.is_set():
+                raise RuntimeError("E-STOP")
+            time.sleep(0.5)
+
+        # 6 — cooker off: click again
+        _cook_state.update(step=6, step_label="Finishing")
+        with _lock:
+            _cooker.click()
+
+        # 7 — plate: lid up → arm up → FWD½ → BWD½ → arm down
+        _cook_state.update(step=7, step_label="Plating")
+        with _lock:
+            _plater.open_lid()
+        _cook_wait(lambda: _plater.is_lid_busy(), timeout_s=20)
+        with _lock:
+            _plater.set_arm_duration(PLATE_ARM_MS)
+            _plater.retract()                           # arm up
+        _cook_wait(lambda: _plater.is_arm_busy(), timeout_s=PLATE_ARM_MS / 1000 + 5)
+        with _lock:
+            _plater.set_arm_duration(PLATE_ARM_MS // 2)
+            _plater.dispense()                          # FWD ½
+        _cook_wait(lambda: _plater.is_arm_busy(), timeout_s=PLATE_ARM_MS / 1000 + 5)
+        with _lock:
+            _plater.set_arm_duration(PLATE_ARM_MS // 2)
+            _plater.retract()                           # BWD ½
+        _cook_wait(lambda: _plater.is_arm_busy(), timeout_s=PLATE_ARM_MS / 1000 + 5)
+        with _lock:
+            _plater.set_arm_duration(PLATE_ARM_MS)
+            _plater.dispense()                          # arm down
+        _cook_wait(lambda: _plater.is_arm_busy(), timeout_s=PLATE_ARM_MS / 1000 + 5)
+
+        _cook_state.update(running=False, done=True, step=0, step_label="Done")
+
+    except Exception as e:
+        logger.warning("cook sequence: %s", e)
+        _cook_state.update(
+            running=False, done=False,
+            error=str(e),
+            step=0, step_label="Stopped" if _cook_abort.is_set() else "Error",
+        )
+    finally:
+        try:
+            with _lock:
+                _ingredient.stop()
+                _cutter.roller_stop()
+                _cutter.cutter_stop()
+                _cutter.close_door()
+                _cutter.pinner_stow()
+                _plater.stop_lid()
+                _plater.stop_arm()
+        except Exception as ex:
+            logger.warning("cook cleanup: %s", ex)
+
+
+@app.route("/cook/start", methods=["POST"])
+def cook_start():
+    global _cook_state
+    data       = request.get_json() or {}
+    umami_pos  = int(data.get("umami_pos",  2))
+    menu_index = int(data.get("menu_index", 0))
+    with _cook_lock:
+        if _cook_state.get("running"):
+            return jsonify({"ok": False, "error": "already running"}), 409
+        _cook_abort.clear()
+        _cook_state = {
+            "running": True, "step": 0, "step_label": "Starting…",
+            "done": False, "error": None, "cook_end_ms": 0,
+        }
+        threading.Thread(
+            target=_run_cook_sequence, args=(umami_pos, menu_index),
+            daemon=True, name="cook-seq",
+        ).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/cook/status")
+def cook_status():
+    return jsonify({"ok": True, **_cook_state})
+
+
+@app.route("/cook/estop", methods=["POST"])
+def cook_estop():
+    _cook_abort.set()
+    try:
+        with _lock:
+            _ingredient.stop()
+            _cutter.roller_stop()
+            _cutter.cutter_stop()
+            _cutter.close_door()
+            _cutter.pinner_stow()
+            _plater.stop_lid()
+            _plater.stop_arm()
+    except Exception as e:
+        logger.warning("estop error: %s", e)
+    _cook_state.update(
+        running=False, step=0, step_label="E-STOP",
+        error="Emergency stop activated",
+    )
+    return jsonify({"ok": True})
 
 
 # ── health ping ───────────────────────────────────────────────────────────────

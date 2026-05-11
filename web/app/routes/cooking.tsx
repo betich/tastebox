@@ -2,65 +2,62 @@ import { useEffect, useRef, useState } from "react"
 import { useNavigate, useSearchParams, useFetcher, useLoaderData } from "react-router"
 import type { ActionFunctionArgs } from "react-router"
 import { MENU } from "../types"
-import { cookerClick, cookerSetPosition, platingMove, setDisplayState } from "../lib/controller.server"
 
-const COOK_MS = 60_000
+const COOK_TOTAL_S = 240
 
-// ── Hardware mapping ──────────────────────────────────────────────────────────
-// Cooker encoder position per umami level (index 0-4)
+// Cooker encoder position per umami level (index 0–4)
 const UMAMI_TO_POSITION = [0, 1, 2, 3, 4] as const
 
-// Plating arm M1 steps per menu item (FRIED RICE WITH PORK, KETCHUP RICE WITH PORK)
-const MENU_TO_M1_STEPS = [0, 100] as const
-
-// Plating arm M2 steps per oiliness level (index 0-4)
-const OILINESS_TO_M2_STEPS = [0, 25, 50, 75, 100] as const
-
-// ── Status types ──────────────────────────────────────────────────────────────
-interface ControllerStatus {
+interface CookStatus {
   ok: boolean
-  cooker?: { online: boolean; on: boolean; position: number }
-  plating?: { online: boolean; m1_busy: boolean; m2_busy: boolean; m1_pos: number; m2_pos: number }
+  running: boolean
+  step: number
+  step_label: string
+  done: boolean
+  error: string | null
+  cook_end_ms: number
 }
 
 interface LoaderData {
-  controllerStatus: ControllerStatus | null
-  online: boolean
+  cookStatus: CookStatus | null
 }
 
-// ── Loader — polls hardware status (called by fetcher.load too) ───────────────
 export async function loader(): Promise<LoaderData> {
   const API = process.env.CONTROLLER_API_URL ?? "http://localhost:5000"
   try {
-    const res = await fetch(`${API}/status`, { signal: AbortSignal.timeout(2000) })
-    const data: ControllerStatus = await res.json()
-    return { controllerStatus: data, online: true }
+    const res = await fetch(`${API}/cook/status`, { signal: AbortSignal.timeout(2000) })
+    const data: CookStatus = await res.json()
+    return { cookStatus: data }
   } catch {
-    return { controllerStatus: null, online: false }
+    return { cookStatus: null }
   }
 }
 
-// ── Server action ─────────────────────────────────────────────────────────────
 export async function action({ request }: ActionFunctionArgs) {
-  const form     = await request.formData()
-  const menu     = parseInt(form.get("menu")     as string ?? "0")
-  const umami    = parseInt(form.get("umami")    as string ?? "2")
-  const oiliness = parseInt(form.get("oiliness") as string ?? "3")
+  const API  = process.env.CONTROLLER_API_URL ?? "http://localhost:5000"
+  const form = await request.formData()
 
-  const cookerPos = UMAMI_TO_POSITION[umami]       ?? 2
-  const m1Steps   = MENU_TO_M1_STEPS[menu]         ?? 0
-  const m2Steps   = OILINESS_TO_M2_STEPS[oiliness] ?? 50
+  if (form.get("_action") === "estop") {
+    try {
+      await fetch(`${API}/cook/estop`, { method: "POST", signal: AbortSignal.timeout(3000) })
+    } catch {}
+    return { ok: true }
+  }
+
+  const umami    = parseInt(form.get("umami") as string ?? "2")
+  const menu     = parseInt(form.get("menu")  as string ?? "0")
+  const umamiPos = UMAMI_TO_POSITION[umami] ?? 2
 
   try {
-    await Promise.all([
-      cookerClick(),
-      cookerSetPosition(cookerPos),
-      platingMove(m1Steps, m2Steps),
-      setDisplayState("cooking", MENU[menu]?.name ?? ""),
-    ])
-    return { ok: true }
+    const res = await fetch(`${API}/cook/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ umami_pos: umamiPos, menu_index: menu }),
+      signal: AbortSignal.timeout(5000),
+    })
+    const data = await res.json()
+    return { ok: data.ok, error: data.error ?? null }
   } catch (err) {
-    console.error("[cooking] controller API unreachable:", err)
     return { ok: false, error: String(err) }
   }
 }
@@ -69,69 +66,68 @@ export function meta() {
   return [{ title: "Tastebox — Cooking…" }]
 }
 
-// ── Derive human-readable machine status ──────────────────────────────────────
-function getMachineStatus(data: LoaderData | null): string {
-  if (!data || !data.online) return "Connecting to machine..."
-  const { cooker, plating } = data.controllerStatus ?? {}
-  if (!cooker?.online && !plating?.online) return "Hardware offline"
-  if (cooker?.on && (plating?.m1_busy || plating?.m2_busy))
-    return "Cooking & plating arm moving..."
-  if (cooker?.on) return "Cooker is active..."
-  if (plating?.m1_busy || plating?.m2_busy) return "Plating arm moving..."
-  return "Finishing up..."
-}
+const TOTAL_STEPS = 7
 
 export default function Cooking() {
-  const navigate = useNavigate()
-  const [params] = useSearchParams()
-  const menuIndex = parseInt(params.get("menu")     ?? "0")
-  const umami     = params.get("umami")     ?? "2"
-  const oiliness  = params.get("oiliness")  ?? "3"
-  const item = MENU[menuIndex] ?? MENU[0]
+  const navigate      = useNavigate()
+  const [params]      = useSearchParams()
+  const menuIndex     = parseInt(params.get("menu")  ?? "0")
+  const umami         = params.get("umami")           ?? "2"
+  const item          = MENU[menuIndex] ?? MENU[0]
 
-  // Hardware command fetcher
   const cmdFetcher    = useFetcher()
-  const submitted     = useRef(false)
-
-  // Status polling fetcher
+  const estopFetcher  = useFetcher()
   const statusFetcher = useFetcher<typeof loader>()
   const initialData   = useLoaderData<typeof loader>()
-  const statusData    = (statusFetcher.data ?? initialData) as LoaderData | null
+  const submitted     = useRef(false)
+  const cookStarted   = useRef(false)
 
-  // Countdown
-  const totalSecs = Math.round(COOK_MS / 1000)
-  const [secsLeft, setSecsLeft] = useState(totalSecs)
+  const cookStatus = ((statusFetcher.data ?? initialData) as LoaderData | null)?.cookStatus
 
-  // Fire hardware commands once on mount
+  // Fire cook start once on mount
   useEffect(() => {
     if (submitted.current) return
     submitted.current = true
+    cookStarted.current = true
     cmdFetcher.submit(
-      { menu: menuIndex, umami, oiliness },
+      { menu: menuIndex, umami },
       { method: "POST", action: "/cooking" },
     )
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Poll status every 2 s
+  // Poll cook/status every 2 s
   useEffect(() => {
     const id = setInterval(() => statusFetcher.load("/cooking"), 2000)
     return () => clearInterval(id)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Countdown + navigate when done
+  // Navigate to done when this session's cook finishes
   useEffect(() => {
-    if (secsLeft <= 0) { navigate(`/done?menu=${menuIndex}`); return }
-    const t = setTimeout(() => setSecsLeft((s) => s - 1), 1000)
-    return () => clearTimeout(t)
-  }, [secsLeft, navigate, menuIndex])
+    if (cookStarted.current && cookStatus?.done) {
+      navigate(`/done?menu=${menuIndex}`)
+    }
+  }, [cookStatus?.done, navigate, menuIndex])
 
-  const machineStatus = getMachineStatus(statusData)
+  // Clock for countdown (ticks every 500 ms)
+  const [nowMs, setNowMs] = useState(Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 500)
+    return () => clearInterval(id)
+  }, [])
 
-  // Circular countdown progress (0→1)
-  const progress = secsLeft / totalSecs
-  const radius = 54
+  const isCooking  = cookStatus?.step === 5
+  const cookEndMs  = cookStatus?.cook_end_ms ?? 0
+  const remainMs   = Math.max(0, cookEndMs - nowMs)
+  const remainS    = Math.ceil(remainMs / 1000)
+  const progress   = isCooking && cookEndMs > 0 ? remainMs / (COOK_TOTAL_S * 1000) : 0
+
+  const radius       = 54
   const circumference = 2 * Math.PI * radius
-  const dashOffset = circumference * (1 - progress)
+  const dashOffset   = circumference * (1 - Math.min(1, Math.max(0, progress)))
+
+  const currentStep = cookStatus?.step    ?? 0
+  const stepLabel   = cookStatus?.step_label ?? (cookStatus?.running ? "Starting…" : "Preparing…")
+  const hasError    = !!cookStatus?.error && !cookStatus?.done
 
   return (
     <div className="screen">
@@ -149,43 +145,83 @@ export default function Cooking() {
           <img src={item.img} alt={item.name} className="w-full h-full object-cover" />
         </div>
 
-        {/* Countdown + status */}
+        {/* Progress area */}
         <div className="flex flex-col items-center gap-6">
 
-          {/* Circular countdown */}
-          <div className="relative flex items-center justify-center" style={{ width: 140, height: 140 }}>
-            <svg width="140" height="140" style={{ transform: "rotate(-90deg)" }}>
-              {/* Track */}
-              <circle cx="70" cy="70" r={radius} fill="none" stroke="#e5e7eb" strokeWidth="8" />
-              {/* Progress */}
-              <circle
-                cx="70" cy="70" r={radius}
-                fill="none"
-                stroke="#8B2020"
-                strokeWidth="8"
-                strokeLinecap="round"
-                strokeDasharray={circumference}
-                strokeDashoffset={dashOffset}
-                style={{ transition: "stroke-dashoffset 0.9s linear" }}
-              />
-            </svg>
-            <span
-              className="absolute text-[40px] font-black"
-              style={{ color: "#8B2020" }}
-            >
-              {secsLeft}
-            </span>
-          </div>
+          {isCooking ? (
+            /* Circular countdown — only during step 5 */
+            <div className="relative flex items-center justify-center" style={{ width: 140, height: 140 }}>
+              <svg width="140" height="140" style={{ transform: "rotate(-90deg)" }}>
+                <circle cx="70" cy="70" r={radius} fill="none" stroke="#e5e7eb" strokeWidth="8" />
+                <circle
+                  cx="70" cy="70" r={radius}
+                  fill="none"
+                  stroke="#8B2020"
+                  strokeWidth="8"
+                  strokeLinecap="round"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={dashOffset}
+                  style={{ transition: "stroke-dashoffset 0.4s linear" }}
+                />
+              </svg>
+              <span className="absolute text-[40px] font-black" style={{ color: "#8B2020" }}>
+                {remainS}
+              </span>
+            </div>
+          ) : (
+            /* Step dots — all other steps */
+            <div className="flex flex-col items-center gap-3">
+              {currentStep > 0 && (
+                <span className="text-[22px] font-semibold text-neutral-400">
+                  Step {currentStep} of {TOTAL_STEPS}
+                </span>
+              )}
+              <div className="flex gap-3">
+                {Array.from({ length: TOTAL_STEPS }, (_, i) => (
+                  <div
+                    key={i}
+                    className="rounded-full transition-all duration-300"
+                    style={{
+                      width:      i + 1 === currentStep ? 16 : 12,
+                      height:     i + 1 === currentStep ? 16 : 12,
+                      background: i + 1 <= currentStep ? "#8B2020" : "#e5e7eb",
+                      opacity:    i + 1 < currentStep ? 0.45 : 1,
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
-          {/* Machine status */}
+          {/* Status line */}
           <div className="flex items-center gap-3">
-            <div className="w-4 h-4 rounded-full dot-pulse" style={{ background: "#8B2020" }} />
-            <span className="text-[28px] font-semibold text-neutral-600">{machineStatus}</span>
+            <div
+              className={`w-4 h-4 rounded-full ${hasError ? "" : "dot-pulse"}`}
+              style={{ background: hasError ? "#dc2626" : "#8B2020" }}
+            />
+            <span className="text-[28px] font-semibold text-neutral-600">
+              {hasError ? `Error: ${cookStatus?.error}` : stepLabel}
+            </span>
           </div>
         </div>
 
         <span className="text-[72px] font-black uppercase tracking-[4px]">TASTEBOX</span>
       </div>
+
+      {/* E-STOP */}
+      <button
+        onClick={() =>
+          estopFetcher.submit({ _action: "estop" }, { method: "POST", action: "/cooking" })
+        }
+        disabled={estopFetcher.state === "submitting" || !cookStatus?.running}
+        className="fixed bottom-8 right-8 px-5 py-3 rounded-xl font-bold text-white text-[18px] transition-all"
+        style={{
+          background: cookStatus?.running ? "#dc2626" : "#9ca3af",
+          boxShadow:  cookStatus?.running ? "0 4px 14px rgba(220,38,38,0.45)" : "none",
+        }}
+      >
+        E-STOP
+      </button>
     </div>
   )
 }
