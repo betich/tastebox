@@ -78,6 +78,7 @@ const DEVICE_CONFIG: Record<Device, SubComponent[]> = {
       id: "pan", label: "Pan",
       actions: [
         { label: "Home",   command: "home_pan"                 },
+        { label: "Stop",   command: "stop_pan"                 },
         { label: "¼ fwd",  command: "move_pan", value:   128   },
         { label: "¼ bwd",  command: "move_pan", value:  -128   },
         { label: "½ fwd",  command: "move_pan", value:   256   },
@@ -85,6 +86,7 @@ const DEVICE_CONFIG: Record<Device, SubComponent[]> = {
       ],
       face: {
         a: { label: "Home",  command: "home_pan"               },
+        b: { label: "Stop",  command: "stop_pan"               },
         x: { label: "¼ fwd", command: "move_pan", value:  128  },
         y: { label: "¼ bwd", command: "move_pan", value: -128  },
       },
@@ -242,6 +244,7 @@ export async function action({ request }: ActionFunctionArgs) {
       if (command === "fwd_cont")   await post("/plating/arm",  { action: "fwd_cont" })
       if (command === "bwd_cont")   await post("/plating/arm",  { action: "bwd_cont" })
       if (command === "home_pan")   await post("/plating/home")
+      if (command === "stop_pan")   await post("/plating/pan/stop")
       if (command === "stop_arm")   await post("/plating/arm",  { action: "stop" })
       if (command === "move_pan")   await post("/plating/move", { m1: Math.round(value), m2: 0 })
       if (command === "arm_dur")    await post("/plating/arm",  { duration_ms: Math.round(value), action: "stop" })
@@ -380,6 +383,68 @@ function Joystick({
       </div>
       <span className="text-neutral-400 text-[18px]">{label}: <span className="text-white font-mono">{display}</span></span>
       {description && <span className="text-neutral-500 text-[13px] text-center max-w-[140px] leading-tight">{description}</span>}
+    </div>
+  )
+}
+
+// ── Pan angle slider ──────────────────────────────────────────────────────────
+
+const PAN_POSITIONS = [
+  { label: "−full", value: -512 },
+  { label: "−½",   value: -256 },
+  { label: "−¼",   value: -128 },
+  { label: "0",    value:    0 },
+  { label: "¼",    value:  128 },
+  { label: "½",    value:  256 },
+  { label: "full", value:  512 },
+] as const
+
+function PanSlider({ onConfirm }: { onConfirm: (steps: number) => void }) {
+  const CENTER = 3
+  const [idx, setIdx] = useState(CENTER)
+  const pos = PAN_POSITIONS[idx]
+
+  return (
+    <div className="flex flex-col gap-3 bg-neutral-900 rounded-2xl px-8 py-5">
+      <div className="flex items-center gap-4">
+        <span className="text-[17px] font-bold text-white w-28 text-right shrink-0">Pan Angle</span>
+        <div className="flex flex-col gap-1.5 flex-1">
+          <input
+            type="range"
+            min={0}
+            max={PAN_POSITIONS.length - 1}
+            step={1}
+            value={idx}
+            onChange={e => setIdx(parseInt(e.target.value))}
+            className="w-full accent-[#8B2020] h-2 cursor-pointer"
+          />
+          <div className="flex justify-between px-0.5">
+            {PAN_POSITIONS.map((p, i) => (
+              <button
+                key={p.value}
+                onClick={() => setIdx(i)}
+                className={`text-[13px] font-mono transition-colors leading-none ${i === idx ? "text-white font-bold" : "text-neutral-500 hover:text-neutral-300"}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button
+          onClick={() => { onConfirm(pos.value); setIdx(CENTER) }}
+          disabled={pos.value === 0}
+          className="px-6 py-3 rounded-xl text-white text-[18px] font-bold disabled:opacity-30 shrink-0 transition-colors"
+          style={{ background: pos.value === 0 ? "#374151" : "#8B2020" }}
+        >
+          Move
+        </button>
+      </div>
+      <div className="ml-32 font-mono text-[20px] text-white">
+        {pos.label}
+        <span className="text-neutral-400 text-[15px] ml-2">
+          ({pos.value > 0 ? "+" : ""}{pos.value} steps)
+        </span>
+      </div>
     </div>
   )
 }
@@ -820,6 +885,9 @@ export default function Admin() {
           <div className="flex flex-col gap-5 flex-1">
             <SubTabs subs={subs} activeIdx={subIdx} onChange={i => setSubIdxMap(m => ({ ...m, [device]: i }))} />
             <ActionRows subs={subs} activeIdx={subIdx} onAction={(cmd, val) => send(cmd, val ?? 0)} />
+            {device === "plating" && sub.id === "pan" && (
+              <PanSlider onConfirm={steps => send("move_pan", steps)} />
+            )}
           </div>
 
           {/* Right: face button cluster */}

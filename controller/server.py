@@ -246,6 +246,11 @@ def plating_home():
     return _safe(lambda: _plater.home_pan() or {})
 
 
+@app.route("/plating/pan/stop", methods=["POST"])
+def plating_pan_stop():
+    return _safe(lambda: _plater.stop_pan() or {})
+
+
 @app.route("/plating/arm", methods=["POST"])
 def plating_arm():
     data   = request.get_json() or {}
