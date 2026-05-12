@@ -2,6 +2,10 @@
 
 Senior Project for Robotics and Artificial Intelligence Engineering.
 
+## Demo
+
+[![Robo Cooker Demo](https://img.youtube.com/vi/4Ep7xnPGWuU/0.jpg)](https://youtu.be/4Ep7xnPGWuU)
+
 ## System Architecture
 
 ```mermaid
